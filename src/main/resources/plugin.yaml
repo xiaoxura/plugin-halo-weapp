@@ -1,0 +1,23 @@
+# Refer https://docs.halo.run/developer-guide/plugin/basics/manifest
+apiVersion: plugin.halo.run/v1alpha1
+kind: Plugin
+metadata:
+  # 与 API group / 仓库同名，冻结于 docs/development-plan-v0.3.0.md
+  name: plugin-halo-weapp
+spec:
+  enabled: true
+  requires: ">=2.23.0"
+  author:
+    name: xiaoxura
+    website: https://github.com/xiaoxura
+  logo: logo.png
+  homepage: https://github.com/xiaoxura/plugin-halo-weapp#readme
+  repo: https://github.com/xiaoxura/plugin-halo-weapp
+  issues: https://github.com/xiaoxura/plugin-halo-weapp/issues
+  displayName: "微信小程序助手"
+  description: "为 HaloWeApp 微信小程序提供公开配置下发、微信登录短会话与安全评论写入能力"
+  license:
+    - name: "GPL-3.0"
+      url: "https://github.com/xiaoxura/plugin-halo-weapp/blob/main/LICENSE"
+  settingName: plugin-halo-weapp-settings
+  configMapName: plugin-halo-weapp-configmap

@@ -1,0 +1,112 @@
+apiVersion: v1alpha1
+kind: Setting
+metadata:
+  name: plugin-halo-weapp-settings
+spec:
+  forms:
+    - group: wechat
+      label: 微信小程序
+      formSchema:
+        - $formkit: text
+          name: appId
+          label: 小程序 AppID
+          validation: required
+          help: 微信公众平台的小程序 AppID
+        - $formkit: password
+          name: appSecret
+          label: 小程序 AppSecret
+          validation: required
+          help: 仅保存在服务端，任何接口与日志都不会输出
+    - group: comment
+      label: 评论
+      formSchema:
+        - $formkit: select
+          name: commentEnabled
+          label: 评论区展示
+          help: 控制小程序是否展示评论区（读取）
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
+        - $formkit: select
+          name: submitEnabled
+          label: 评论提交
+          help: 控制小程序是否开放发表评论；提审期间保持关闭
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
+        - $formkit: select
+          name: replyEnabled
+          label: 回复提交
+          help: 控制小程序是否开放回复评论
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
+        - $formkit: number
+          name: maxLength
+          label: 评论最大长度
+          help: 评论正文的 Unicode 字符数上限（1～500）
+          value: 500
+          validation: min:1|max:500
+        - $formkit: number
+          name: rateLimitPerMinute
+          label: 每用户每分钟评论数
+          value: 3
+          validation: min:1|max:30
+        - $formkit: number
+          name: rateLimitPerHour
+          label: 每用户每小时评论数
+          value: 20
+          validation: min:1|max:200
+    - group: announcement
+      label: 公告
+      formSchema:
+        - $formkit: select
+          name: enabled
+          label: 公告开关
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
+        - $formkit: text
+          name: version
+          label: 公告版本
+          help: 修改版本可让已关闭公告的用户再次看到
+          value: ""
+        - $formkit: textarea
+          name: content
+          label: 公告内容
+          value: ""
+    - group: client
+      label: 版本与隐私
+      formSchema:
+        - $formkit: text
+          name: minVersion
+          label: 小程序最低版本
+          help: 严格 SemVer（如 0.3.0）；低于该版本的客户端将被关闭写能力
+          value: "0.3.0"
+        - $formkit: text
+          name: privacyPolicyUrl
+          label: 隐私政策 URL
+          help: 必须为 HTTPS 地址
+          value: ""
+        - $formkit: text
+          name: privacyPolicyVersion
+          label: 隐私政策版本
+          help: 用户提交评论时须回传一致的版本
+          value: ""
+        - $formkit: number
+          name: upstreamTimeoutMillis
+          label: 上游接口超时（毫秒）
+          help: 调用微信 / Halo 接口的超时时间，留空使用默认 5000
+          validation: min:1000|max:30000

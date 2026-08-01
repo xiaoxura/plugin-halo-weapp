@@ -1,0 +1,547 @@
+openapi: 3.0.3
+info:
+  title: plugin-halo-weapp Public API
+  description: >
+    HaloWeApp 微信小程序配套插件 `plugin-halo-weapp` 对外暴露的公开 API 契约。
+    本文件是客户端（小程序）与服务端（插件）之间的**唯一事实来源**，
+    任何变更必须先修改本文件并同步双端实现。
+
+    ## 版本规则
+
+    - 路径保持 `v1alpha1`；
+    - `schemaVersion: 1` 内只允许增加可选字段；
+    - 删除、改名、修改字段类型时提升 `schemaVersion`；
+    - 客户端遇到高于自身支持范围的 `schemaVersion` 时保持只读，不尝试评论写入；
+    - 所有错误使用稳定业务码（`code`），客户端不得依赖中文 `message` 做逻辑判断。
+
+    ## 安全原则
+
+    - AppSecret、微信 access token、OpenID、session_key 只存在于服务端；
+    - 评论/回复写入必须经过：实时开关校验 → 会话校验 → 频控 → 幂等 →
+      微信 `msgSecCheck`（scene=2, version=2，仅 `pass` 放行）→ Halo Public Comment API；
+    - 客户端不得传入 `group`/`kind`/`version`/`approved`/`hidden`/HTML/头像/邮箱/网站；
+    - 评论读取仍直接使用 Halo Public API（`/apis/api.halo.run/v1alpha1/comments`），
+      不经过本插件。
+  version: 0.1.0
+  contact:
+    name: HaloWeApp
+    url: https://github.com/xiaoxura/plugin-halo-weapp
+servers:
+  - url: /apis/api.weapp.halo.run/v1alpha1
+tags:
+  - name: config
+    description: 公开运行时配置
+  - name: session
+    description: 微信登录短会话
+  - name: comment
+    description: 安全评论/回复写入
+paths:
+  /config:
+    get:
+      tags: [config]
+      operationId: getPublicConfig
+      summary: 获取公开运行时配置
+      description: >
+        无需认证。响应只包含白名单字段，绝不包含 AppSecret、OpenID、
+        内部异常或任意 Setting 原始字段。`commentEnabled` 控制评论区是否展示，
+        `commentOptions.submitEnabled` / `replyEnabled` 单独控制写入口。
+      responses:
+        '200':
+          description: 公开配置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicConfig'
+              example:
+                schemaVersion: 1
+                generatedAt: '2026-08-01T08:00:00Z'
+                commentEnabled: false
+                commentOptions:
+                  submitEnabled: false
+                  replyEnabled: false
+                  maxLength: 500
+                  nicknameRequired: true
+                announcement:
+                  enabled: false
+                  version: ''
+                  content: ''
+                minVersion: 0.3.0
+                privacyPolicyUrl: 'https://example.com/privacy'
+                privacyPolicyVersion: '2026-08-01'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /session:
+    post:
+      tags: [session]
+      operationId: createSession
+      summary: 微信登录换取短会话
+      description: >
+        使用 `wx.login` 返回的一次性 code 换取不透明会话 token。
+        插件在服务端调用微信 `code2Session`；OpenID 与 session_key 不返回小程序。
+        token 至少 256 bit 随机熵，默认 90 分钟有效，仅存内存，插件重启后全部失效。
+        code 只使用一次，不写日志、不缓存原文。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionRequest'
+      responses:
+        '200':
+          description: 会话创建成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+              example:
+                sessionToken: 9f2c1e7a4b8d4f0a9c3e5b7d1f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a
+                expiresIn: 5400
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '502':
+          description: 微信服务不可用（code 无效/过期/已使用或微信接口异常）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: WECHAT_UNAVAILABLE
+                message: 登录服务暂时不可用，请稍后重试
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+  /comments:
+    post:
+      tags: [comment]
+      operationId: createComment
+      summary: 发表文章评论
+      description: >
+        服务端固定处理顺序：
+
+        1. 校验实时总开关、会话、请求体和隐私协议版本；
+        2. 校验文章存在、公开且 `allowComment=true`；
+        3. 检查幂等键和频控；
+        4. 调用微信文本安全检测（`content = 昵称 + \n + 正文`）；
+        5. 对昵称和正文做 HTML 转义，由服务端生成 Halo 所需 `raw/content`；
+        6. 通过 HaloCommentGateway 代理 Halo Public Comment API
+           （固定构造 Post 的 `subjectRef`，`allowNotification=false`）；
+        7. 根据 Halo `approved` 状态返回 `published` 或 `pending`；
+        8. 缓存幂等结果，重复请求返回第一次结果。
+      parameters:
+        - $ref: '#/components/parameters/SessionHeader'
+        - $ref: '#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreateRequest'
+      responses:
+        '200':
+          description: 评论已受理（published 或 pending 由服务端审核策略决定）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentCreateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/SessionError'
+        '403':
+          description: 评论写入口已关闭
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: COMMENT_DISABLED
+                message: 评论功能已关闭
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+        '404':
+          description: 文章不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: POST_NOT_FOUND
+                message: 内容不存在或已删除
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/ContentReviewError'
+        '426':
+          $ref: '#/components/responses/ClientUpdateRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /comments/{commentName}/replies:
+    post:
+      tags: [comment]
+      operationId: createReply
+      summary: 回复指定评论
+      description: >
+        正文规则与评论一致。`quoteReplyName` 可选，只能引用当前评论下已公开的回复。
+        服务端校验父评论存在且属于公开文章；同样执行频控、幂等和 `msgSecCheck`。
+      parameters:
+        - name: commentName
+          in: path
+          required: true
+          description: 父评论的 metadata.name
+          schema:
+            type: string
+        - $ref: '#/components/parameters/SessionHeader'
+        - $ref: '#/components/parameters/IdempotencyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReplyCreateRequest'
+      responses:
+        '200':
+          description: 回复已受理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReplyCreateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/SessionError'
+        '403':
+          description: 回复写入口已关闭
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: REPLY_DISABLED
+                message: 回复功能已关闭
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+        '404':
+          description: 父评论不存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: COMMENT_NOT_FOUND
+                message: 评论不存在或已删除
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/ContentReviewError'
+        '426':
+          $ref: '#/components/responses/ClientUpdateRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+components:
+  parameters:
+    SessionHeader:
+      name: X-WeApp-Session
+      in: header
+      required: true
+      description: POST /session 返回的不透明会话 token
+      schema:
+        type: string
+    IdempotencyHeader:
+      name: X-Idempotency-Key
+      in: header
+      required: true
+      description: >
+        客户端生成的幂等键（建议 UUID）。按「用户 + 路由 + key」隔离，默认保留 10 分钟。
+        相同 key 且请求体一致返回首次结果；相同 key 但请求体不同返回 `IDEMPOTENCY_CONFLICT`。
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+  schemas:
+    PublicConfig:
+      type: object
+      required:
+        - schemaVersion
+        - generatedAt
+        - commentEnabled
+        - commentOptions
+        - announcement
+        - minVersion
+        - privacyPolicyUrl
+        - privacyPolicyVersion
+      properties:
+        schemaVersion:
+          type: integer
+          description: 配置结构版本；客户端高于自身支持范围时保持只读
+          example: 1
+        generatedAt:
+          type: string
+          format: date-time
+          description: 配置生成时间（服务端时钟）
+        commentEnabled:
+          type: boolean
+          description: 评论区是否展示（读取）
+        commentOptions:
+          type: object
+          required: [submitEnabled, replyEnabled, maxLength, nicknameRequired]
+          properties:
+            submitEnabled:
+              type: boolean
+              description: 评论提交开关；只有本次冷启动实时拉取成功才允许为 true
+            replyEnabled:
+              type: boolean
+              description: 回复提交开关
+            maxLength:
+              type: integer
+              description: 评论正文最大长度（Unicode 字符数），服务端再次校验
+              example: 500
+            nicknameRequired:
+              type: boolean
+              description: 昵称是否必填
+        announcement:
+          type: object
+          required: [enabled, version, content]
+          properties:
+            enabled:
+              type: boolean
+            version:
+              type: string
+              description: 公告版本；客户端按版本记录「已关闭」状态
+            content:
+              type: string
+        minVersion:
+          type: string
+          description: 小程序最低版本（SemVer）；非法版本字符串客户端忽略
+          example: 0.3.0
+        privacyPolicyUrl:
+          type: string
+          format: uri
+          description: 隐私政策 HTTPS URL
+        privacyPolicyVersion:
+          type: string
+          description: 隐私政策版本；提交评论时回传表示已同意
+          example: '2026-08-01'
+    SessionRequest:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          description: wx.login 返回的一次性 code
+          minLength: 1
+          maxLength: 128
+    SessionResponse:
+      type: object
+      required: [sessionToken, expiresIn]
+      properties:
+        sessionToken:
+          type: string
+          description: 随机不透明 token，通过 X-WeApp-Session 请求头传递
+        expiresIn:
+          type: integer
+          description: 会话有效期（秒），默认 5400（90 分钟）
+          example: 5400
+    CommentCreateRequest:
+      type: object
+      required: [postName, displayName, content, privacyConsentVersion]
+      properties:
+        postName:
+          type: string
+          description: 文章的 metadata.name
+          minLength: 1
+          maxLength: 128
+        displayName:
+          type: string
+          description: 访客昵称，2～20 个 Unicode 字符
+          minLength: 2
+          maxLength: 20
+        content:
+          type: string
+          description: 纯文本评论，1～500 个 Unicode 字符（以服务端配置 maxLength 为准）
+          minLength: 1
+          maxLength: 500
+        privacyConsentVersion:
+          type: string
+          description: 用户已同意的隐私政策版本，必须与当前配置一致
+    ReplyCreateRequest:
+      type: object
+      required: [displayName, content, privacyConsentVersion]
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 20
+        content:
+          type: string
+          minLength: 1
+          maxLength: 500
+        privacyConsentVersion:
+          type: string
+        quoteReplyName:
+          type: string
+          description: 可选；只能引用当前评论下已公开的回复
+    CommentCreateResponse:
+      type: object
+      required: [requestId, status, commentName]
+      properties:
+        requestId:
+          type: string
+        status:
+          type: string
+          enum: [published, pending]
+          description: published=立即可见；pending=审核后可见（客户端不得伪造已发布）
+        commentName:
+          type: string
+          description: Halo 评论 metadata.name
+    ReplyCreateResponse:
+      type: object
+      required: [requestId, status, replyName]
+      properties:
+        requestId:
+          type: string
+        status:
+          type: string
+          enum: [published, pending]
+        replyName:
+          type: string
+    ErrorResponse:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+          description: 稳定业务码，客户端只根据 code 决定行为
+          enum:
+            - VALIDATION_ERROR
+            - SESSION_REQUIRED
+            - SESSION_EXPIRED
+            - COMMENT_DISABLED
+            - REPLY_DISABLED
+            - POST_NOT_FOUND
+            - COMMENT_NOT_FOUND
+            - COMMENT_NOT_ALLOWED
+            - IDEMPOTENCY_CONFLICT
+            - CONTENT_REVIEW
+            - CONTENT_RISKY
+            - CLIENT_UPDATE_REQUIRED
+            - RATE_LIMITED
+            - WECHAT_UNAVAILABLE
+            - HALO_UNAVAILABLE
+        message:
+          type: string
+          description: 面向用户的提示文案，客户端不得用于逻辑判断
+        requestId:
+          type: string
+          description: 排查用请求 ID
+        retryAfter:
+          type: integer
+          description: 仅 RATE_LIMITED 时存在；可重试等待秒数
+  responses:
+    ValidationError:
+      description: 请求参数不合法（客户端标记字段并保留表单）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: VALIDATION_ERROR
+            message: 昵称需为 2～20 个字符
+            requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    SessionError:
+      description: 缺少会话或会话已过期（客户端重新 wx.login，最多自动重试一次）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            required:
+              value:
+                code: SESSION_REQUIRED
+                message: 请先登录
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+            expired:
+              value:
+                code: SESSION_EXPIRED
+                message: 登录已过期，请重新登录
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    ConflictError:
+      description: 文章禁止评论或幂等键冲突（客户端停止提交并提示）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            notAllowed:
+              value:
+                code: COMMENT_NOT_ALLOWED
+                message: 该内容暂不支持评论
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+            idempotency:
+              value:
+                code: IDEMPOTENCY_CONFLICT
+                message: 请求冲突，请刷新后重试
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    ContentReviewError:
+      description: 内容安全检测未通过（不落库，提示修改内容，不暴露命中关键词）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            review:
+              value:
+                code: CONTENT_REVIEW
+                message: 内容需要修改后才能发布
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+            risky:
+              value:
+                code: CONTENT_RISKY
+                message: 内容存在风险，无法发布
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    ClientUpdateRequired:
+      description: 客户端版本低于 minVersion（关闭写能力并引导更新）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: CLIENT_UPDATE_REQUIRED
+            message: 请更新小程序后再评论
+            requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    RateLimited:
+      description: 触发频控（客户端按 retryAfter 禁用提交按钮）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: RATE_LIMITED
+            message: 操作过于频繁，请稍后再试
+            requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+            retryAfter: 30
+    BadGateway:
+      description: 上游微信服务不可用（保留表单，允许稍后手动重试）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: WECHAT_UNAVAILABLE
+            message: 安全检测服务暂时不可用，请稍后重试
+            requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    ServiceUnavailable:
+      description: Halo 或插件内部服务不可用（保留表单，允许稍后手动重试）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: HALO_UNAVAILABLE
+            message: 服务暂时不可用，请稍后重试
+            requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R

@@ -1,0 +1,45 @@
+plugins {
+    id 'java'
+    id "run.halo.plugin.devtools" version "0.6.2"
+}
+
+group 'run.halo.weapp'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // 只使用正式版本，禁止 SNAPSHOT（见 docs/development-plan-v0.3.0.md 决策表）
+    implementation platform('run.halo.tools.platform:plugin:2.23.0')
+    compileOnly 'run.halo.app:api'
+
+    testImplementation 'run.halo.app:api'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'io.projectreactor:reactor-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release = 21
+}
+
+tasks.named('generatePluginComponentsIdx') {
+    notCompatibleWithConfigurationCache('This task invokes "Task.project" at execution time, which is not supported with configuration cache.')
+}
+
+halo {
+    // 本地开发调试使用的 Halo 版本（主集成测试环境）
+    version = '2.25.4'
+}

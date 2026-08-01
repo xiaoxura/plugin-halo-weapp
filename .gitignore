@@ -1,0 +1,21 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# 本地工具链与缓存（便携 JDK / Gradle 用户目录，禁止提交）
+.toolchain/
+.gradle-user-home/
+
+# 日志与临时文件
+*.log
+.DS_Store
