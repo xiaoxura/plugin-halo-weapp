@@ -128,6 +128,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SessionHeader'
         - $ref: '#/components/parameters/IdempotencyHeader'
+        - $ref: '#/components/parameters/ClientVersionHeader'
       requestBody:
         required: true
         content:
@@ -194,6 +195,7 @@ paths:
             type: string
         - $ref: '#/components/parameters/SessionHeader'
         - $ref: '#/components/parameters/IdempotencyHeader'
+        - $ref: '#/components/parameters/ClientVersionHeader'
       requestBody:
         required: true
         content:
@@ -263,6 +265,16 @@ components:
         type: string
         minLength: 8
         maxLength: 128
+    ClientVersionHeader:
+      name: X-WeApp-Client-Version
+      in: header
+      required: false
+      description: >
+        客户端版本号（SemVer）。服务端据此与 minVersion 比较，低于门槛返回
+        `CLIENT_UPDATE_REQUIRED`；缺失或非法时忽略该检查（不阻断请求）。
+      schema:
+        type: string
+        example: 0.3.0
   schemas:
     PublicConfig:
       type: object
