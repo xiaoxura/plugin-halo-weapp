@@ -105,7 +105,7 @@ public class CommentEndpoint implements CustomEndpoint {
         return request.headers().firstHeader(CLIENT_VERSION_HEADER);
     }
 
-    /** 来源 IP 只取远端地址，不信任 X-Forwarded-For（v0.1.0 未配置受信代理）。 */
+    /** 来源 IP 只取远端地址，不信任 X-Forwarded-For（v0.1.x 未配置受信代理）。 */
     private static String clientIp(ServerRequest request) {
         return request.remoteAddress()
             .map(InetSocketAddress::getAddress)

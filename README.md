@@ -12,6 +12,10 @@
 
 接口契约的唯一事实来源：[docs/openapi.yaml](docs/openapi.yaml)。
 
+> 当前可执行的 v0.3.0 配套与 v0.2.0 回滚基线是 **v0.1.1**。请勿使用
+> v0.1.0：该版本的 Setting 资源不在 Halo 可发现目录中，并且生产 Spring
+> 容器无法确定两个多构造器组件的注入构造器。
+
 ## 安全模型
 
 - 评论读取仍直接使用 Halo Public API，不经过本插件；
@@ -55,6 +59,7 @@
 - [docs/threat-model.md](docs/threat-model.md) — 威胁模型
 - [docs/adr/](docs/adr/) — 架构决策记录
 - [docs/deployment.md](docs/deployment.md) — 部署、升级与回滚
+- [docs/release-validation-v0.1.1.md](docs/release-validation-v0.1.1.md) — 维护候选双 Halo 回滚证据
 
 ## License
 

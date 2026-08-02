@@ -1,6 +1,7 @@
-# 威胁模型（plugin-halo-weapp v0.1.0 / HaloWeApp v0.3.0）
+# 威胁模型（plugin-halo-weapp v0.1.1 / HaloWeApp v0.3.0）
 
-> 状态：M0 冻结基线。新增能力前先更新本文档。
+> 状态：v0.1.1 维护基线。v0.1.0 不满足 Halo 生产资源发现、构造器注入与匿名
+> config 授权要求，不得作为安装或回滚版本。新增能力前先更新本文档。
 > 范围：小程序 → 插件 → 微信 API / Halo Public API 的评论写入链路，以及远程配置下发链路。
 
 ## 1. 资产

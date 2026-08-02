@@ -2,12 +2,35 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, hotfix/v0.1.1]
   pull_request:
-    branches: [main]
+    branches: [main, hotfix/v0.1.1]
 
 jobs:
+  compatibility-test:
+    name: Halo API ${{ matrix.halo_api_version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Halo 2.25.4 runtime publishes the compatible plugin API platform as 2.25.0.
+        halo_api_version: ['2.23.0', '2.25.0']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Compile and test compatibility baseline
+        run: ./gradlew clean test -PhaloApiVersion=${{ matrix.halo_api_version }}
+
   build:
+    needs: compatibility-test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,8 +43,8 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build and test
-        run: ./gradlew build
+      - name: Build release-compatible jar
+        run: ./gradlew clean build -PhaloApiVersion=2.23.0
 
       - name: Upload plugin jar
         uses: actions/upload-artifact@v4

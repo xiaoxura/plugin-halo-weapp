@@ -12,7 +12,7 @@ metadata:
 rules:
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["config"]
-    verbs: ["get"]
+    verbs: ["get", "list"]
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["session"]
     verbs: ["create"]

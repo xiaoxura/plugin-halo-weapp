@@ -15,7 +15,7 @@ import run.halo.weapp.error.ErrorCode;
  *
  * <p>按用户（OpenID 经 HMAC 后的标识做 key，不落 OpenID 原文）每分钟/每小时两个窗口；
  * 另有按来源 IP 的宽松窗口（每分钟 30 次，仅作兜底）。IP 取 ServerRequest 远端地址，
- * 不信任 X-Forwarded-For（v0.1.0 未配置受信代理）。窗口条目懒清理。</p>
+ * 不信任 X-Forwarded-For（v0.1.x 未配置受信代理）。窗口条目懒清理。</p>
  *
  * <p>必须在任何微信 / Halo 外部调用之前执行。</p>
  */

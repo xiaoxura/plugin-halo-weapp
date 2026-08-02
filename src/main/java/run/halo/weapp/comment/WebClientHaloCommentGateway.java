@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -42,6 +43,7 @@ public class WebClientHaloCommentGateway implements HaloCommentGateway {
     private final ExternalUrlSupplier externalUrlSupplier;
     private final SettingsService settings;
 
+    @Autowired
     public WebClientHaloCommentGateway(ExternalUrlSupplier externalUrlSupplier,
                                        SettingsService settings) {
         this(WebClient.builder().build(), externalUrlSupplier, settings);

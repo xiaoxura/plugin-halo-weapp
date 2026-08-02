@@ -5,13 +5,17 @@ plugins {
 
 group 'run.halo.weapp'
 
+// 最低 Halo API 编译基线可由维护 CI 覆盖，默认产物始终以 2.23.0 编译。
+def haloApiVersion = providers.gradleProperty('haloApiVersion').getOrElse('2.23.0')
+def haloDevVersion = providers.gradleProperty('haloDevVersion').getOrElse('2.25.4')
+
 repositories {
     mavenCentral()
 }
 
 dependencies {
     // 只使用正式版本，禁止 SNAPSHOT（见 docs/development-plan-v0.3.0.md 决策表）
-    implementation platform('run.halo.tools.platform:plugin:2.23.0')
+    implementation platform("run.halo.tools.platform:plugin:${haloApiVersion}")
     compileOnly 'run.halo.app:api'
 
     testImplementation 'run.halo.app:api'
@@ -40,6 +44,6 @@ tasks.named('generatePluginComponentsIdx') {
 }
 
 halo {
-    // 本地开发调试使用的 Halo 版本（主集成测试环境）
-    version = '2.25.4'
+    // 本地 haloServer 调试版本可用 -PhaloDevVersion=... 覆盖。
+    version = haloDevVersion
 }

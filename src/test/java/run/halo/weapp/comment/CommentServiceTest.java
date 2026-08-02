@@ -37,8 +37,8 @@ class CommentServiceTest {
     private CommentService commentService;
     private String sessionToken;
 
-    private static final String OPEN_ID = "openid-real-value";
-    private static final String IDEM_KEY = "12345678-abcd";
+    private static final String OPEN_ID = "test-openid-placeholder";
+    private static final String IDEM_KEY = "test-idempotency-key";
 
     @BeforeEach
     void setUp() {

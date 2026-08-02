@@ -1,0 +1,20 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Pre-v0.2.0 history contains two deterministic documentation/test placeholders, never issued credentials."
+regexTarget = "secret"
+regexes = [
+  '''^9f2c1e7a4b8d4f0a9c3e5b7d1f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a$''',
+  '''^12345678-abcd$'''
+]
+
+[[allowlists]]
+description = "Repository-ignored local toolchains, dependency caches, and generated build output."
+paths = [
+  '''(^|/)\.toolchain/''',
+  '''(^|/)\.gradle(-user-home)?/''',
+  '''(^|/)build/''',
+  '''(^|/)out/''',
+  '''(^|/)bin/'''
+]

@@ -22,12 +22,17 @@ info:
     - 客户端不得传入 `group`/`kind`/`version`/`approved`/`hidden`/HTML/头像/邮箱/网站；
     - 评论读取仍直接使用 Halo Public API（`/apis/api.halo.run/v1alpha1/comments`），
       不经过本插件。
-  version: 0.1.0
+  version: 0.1.1
   contact:
     name: HaloWeApp
     url: https://github.com/xiaoxura/plugin-halo-weapp
+  license:
+    name: GPL-3.0
+    url: https://github.com/xiaoxura/plugin-halo-weapp/blob/main/LICENSE
 servers:
   - url: /apis/api.weapp.halo.run/v1alpha1
+# Halo RBAC 将这些 CustomEndpoint 聚合给 anonymous；需要业务会话的写操作单独覆盖。
+security: []
 tags:
   - name: config
     description: 公开运行时配置
@@ -94,7 +99,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SessionResponse'
               example:
-                sessionToken: 9f2c1e7a4b8d4f0a9c3e5b7d1f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a
+                sessionToken: example-opaque-session-token
                 expiresIn: 5400
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -113,6 +118,8 @@ paths:
       tags: [comment]
       operationId: createComment
       summary: 发表文章评论
+      security:
+        - WeAppSession: []
       description: >
         服务端固定处理顺序：
 
@@ -183,6 +190,8 @@ paths:
       tags: [comment]
       operationId: createReply
       summary: 回复指定评论
+      security:
+        - WeAppSession: []
       description: >
         正文规则与评论一致。`quoteReplyName` 可选，只能引用当前评论下已公开的回复。
         服务端校验父评论存在且属于公开文章；同样执行频控、幂等和 `msgSecCheck`。
@@ -246,6 +255,12 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 components:
+  securitySchemes:
+    WeAppSession:
+      type: apiKey
+      in: header
+      name: X-WeApp-Session
+      description: 插件签发的短期不透明会话 token；不等同 Halo 用户或管理员凭据
   parameters:
     SessionHeader:
       name: X-WeApp-Session

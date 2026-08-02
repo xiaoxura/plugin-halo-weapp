@@ -42,6 +42,41 @@ spec:
           label: 自定义字体 URL
           help: 可选；必须是已加入小程序 downloadFile 合法域名的 HTTPS 字体地址
           value: ""
+    # v0.1.1 不实现以下能力；仅保留 v0.2.0 ConfigMap 组，避免二进制回滚时
+    # Halo 按旧 Setting schema 删除前向配置。执行回滚前仍必须先关闭这些开关。
+    - group: features
+      label: v0.2.0 前向配置（本版本不生效）
+      formSchema:
+        - $formkit: select
+          name: momentsEnabled
+          label: 瞬间展示（需 v0.2.0）
+          help: v0.1.1 不读取此开关；仅为回滚时保留配置，使用前请升级回 v0.2.0
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
+        - $formkit: select
+          name: momentCommentEnabled
+          label: 瞬间评论展示（需 v0.2.0+）
+          help: v0.1.1 不读取此开关；仅为回滚时保留配置
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
+        - $formkit: select
+          name: readerAccountEnabled
+          label: 微信读者登录（需 v0.2.0）
+          help: v0.1.1 不读取此开关；仅为回滚时保留配置，回滚期间保持关闭
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
     - group: comment
       label: 评论
       formSchema:
