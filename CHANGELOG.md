@@ -29,6 +29,10 @@
 - `SessionService` 支持账号会话精确撤销与按 readerName 全部撤销，原 v0.1.0 评论会话路径不变
 - 部署文档扩展为 v0.2.0 暗部署、独立 identity ConfigMap/WeAppUser 备份恢复、分级开关和
   v0.3.0 + 插件 v0.1.0 回滚路径
+- Setting 扩展定义移至 jar 的 `extensions/settings.yaml`，与 Halo 生产插件加载器的发现目录一致；
+  新增资源布局回归测试，禁止只在 jar 根目录保留 `settings.yaml`
+- 对存在测试构造器的 Spring 组件显式选择生产注入构造器，避免真实 Halo 启动时因多构造器而
+  无法创建 Bean
 
 ### 安全
 
@@ -42,12 +46,16 @@
   `HALO_UNAVAILABLE`，禁止静默生成新 key 导致旧账号不可定位
 - 注销仅删除微信读者资源和账号会话；既有公开 Halo 评论不会自动删除，OpenAPI、隐私和客户端
   二次确认统一说明
+- 匿名角色按 Halo `RequestInfoFactory` 的 resource/resourceName/nonResourceURL 语义最小授权；
+  `/auth/login`、资料、退出、注销和评论回复不再被 Halo Security 重定向到 Console 登录页
 
 ### 验证
 
-- 97 项 Java 自动化测试在 Halo plugin API platform 2.23.0 与 2.25.0 均通过
+- 100 项 Java 自动化测试在 Halo plugin API platform 2.23.0 与 2.25.0 均通过
 - `./gradlew clean build -PhaloApiVersion=2.23.0` 作为最终兼容产物门禁；OpenAPI 重复键、
   资源默认开关和敏感值扫描纳入 RC 清单
+- Halo 2.25.4 隔离运行时已验证 Setting/ConfigMap 初始化、插件冷启动、公开配置和全部匿名
+  auth/评论路由；实际微信、生产数据和双真机证据仍不由该本机验证替代
 - 编译/Mock 测试不能替代 Halo 2.23.x / 2.25.4 实际部署、真实微信登录、identityKey 恢复和
   v0.1.0 回滚演练；这些证据完成前保持未发布
 

@@ -108,10 +108,14 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 sha256sum build/libs/plugin-halo-weapp-0.2.0.jar
 unzip -p build/libs/plugin-halo-weapp-0.2.0.jar plugin.yaml | grep -E 'name:|requires:'
+jar tf build/libs/plugin-halo-weapp-0.2.0.jar \
+  | grep -E '^(plugin.yaml|extensions/(settings|roles)\.yaml)$'
+! jar tf build/libs/plugin-halo-weapp-0.2.0.jar | grep -qx 'settings.yaml'
 ```
 
 将 jar SHA-256、源提交和测试结果写入 release 记录。不要发布从 2.25.0 编译但未经最低版本验证的
-替代 jar。
+替代 jar。Setting 必须位于 `extensions/settings.yaml`；若只出现在 jar 根目录，Halo 编译测试仍
+可能通过，但生产插件协调器会持续报告找不到 Setting 扩展并拒绝正常启动。
 
 ## 4. 从 v0.1.0 升级到 v0.2.0
 
@@ -125,7 +129,10 @@ unzip -p build/libs/plugin-halo-weapp-0.2.0.jar plugin.yaml | grep -E 'name:|req
    - 评论展示、提交、回复继续按暗部署要求关闭。
 5. 匿名调用 `/config`：必须返回 JSON、`schemaVersion=1`，新 feature 全为 false，并且响应中无
    `appSecret`、OpenID、identityKey、readerName 或内部摘要。
-6. 使用旧 HaloWeApp v0.3.0 回归配置、匿名 `/session` 和文章评论；此时不得开放新功能。
+6. 不携带 `X-WeApp-Session` 调用 `/auth/profile`、`/auth/session`、`/auth/account`、评论和回复
+   路由：必须得到插件的结构化 401；默认关闭时 `/auth/login` 必须得到结构化 403。任何
+   `302 Location: /login` 都表示匿名 RBAC 未按 Halo 的资源语义生效，必须停止部署。
+7. 使用旧 HaloWeApp v0.3.0 回归配置、匿名 `/session` 和文章评论；此时不得开放新功能。
 
 v0.2.0 的 identity ConfigMap 仅在首次实际使用读者身份时按需生成。第一次小范围测试账号登录
 成功后，应立即重新执行完整备份并记录 identityKey 指纹；在该备份完成前不得扩大 readerAccount。

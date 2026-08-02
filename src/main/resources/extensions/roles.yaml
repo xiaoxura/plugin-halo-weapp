@@ -1,6 +1,8 @@
 # 将插件公开接口聚合到匿名角色，使小程序无需 Halo 账号即可访问。
 # 机制见 https://docs.halo.run 与社区实践：role-template + aggregate-to-anonymous。
-# 资源名 = 版本后的首段路径，子资源形如 comments/replies、auth/profile。
+# Halo RequestInfoFactory 将版本后的首段识别为 resource、第二段识别为 resourceName；只有
+# /resource/{name}/{subresource} 才形成 resource/subresource。POST /resource/{name} 会按
+# nonResourceURL 授权，因此登录必须显式列出完整 URL，不能伪装成 auth/login 资源。
 # 注意：这里只授权公开 auth 路由，绝不授权 weapp.halo.run/weappusers。
 apiVersion: v1alpha1
 kind: Role
@@ -19,14 +21,21 @@ rules:
     resources: ["session"]
     verbs: ["create"]
   - apiGroups: ["api.weapp.halo.run"]
-    resources: ["auth/login"]
-    verbs: ["create"]
+    resources: ["auth"]
+    resourceNames: ["profile"]
+    verbs: ["get", "patch"]
   - apiGroups: ["api.weapp.halo.run"]
-    resources: ["auth/profile"]
-    verbs: ["get", "list", "patch"]
-  - apiGroups: ["api.weapp.halo.run"]
-    resources: ["auth/session", "auth/account"]
+    resources: ["auth"]
+    resourceNames: ["session"]
     verbs: ["delete"]
+  # Halo 2.25.4 的 resourceNames 匹配器只接受规则中的首项，保持一项一规则才能同时最小授权。
+  - apiGroups: ["api.weapp.halo.run"]
+    resources: ["auth"]
+    resourceNames: ["account"]
+    verbs: ["delete"]
+  - nonResourceURLs:
+      - "/apis/api.weapp.halo.run/v1alpha1/auth/login"
+    verbs: ["create"]
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["comments", "comments/replies"]
     verbs: ["create"]

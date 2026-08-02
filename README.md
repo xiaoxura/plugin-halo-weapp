@@ -50,9 +50,9 @@ v0.2.0 不实现 Moment 评论写入。`momentCommentEnabled` 仅为 v0.4.1 预�
 | 微信 | 小程序 AppID / AppSecret；需配置并核对隐私保护指引 |
 | Moment | 可选；`PluginMoments >= 1.15.0`，推荐 v1.16.1 |
 
-CI 会分别用 Halo plugin API platform 2.23.0 和 2.25.0 编译并运行测试；Halo 2.25.4 的
-`haloServer` 仅是默认本地调试目标。编译测试不等于真实 Halo 部署、微信或双真机证据，发布前
-仍须按 [deployment.md](docs/deployment.md) 完成目标环境矩阵。
+CI 会分别用 Halo plugin API platform 2.23.0 和 2.25.0 编译并运行测试；RC 已在隔离的
+Halo 2.25.4 运行时完成插件冷启动和匿名 API 冒烟。编译/本机运行测试都不等于真实微信、生产
+数据或双真机证据，发布前仍须按 [deployment.md](docs/deployment.md) 完成目标环境矩阵。
 
 ## 安装与初始配置
 
@@ -62,7 +62,8 @@ CI 会分别用 Halo plugin API platform 2.23.0 和 2.25.0 编译并运行测试
    ./gradlew clean build -PhaloApiVersion=2.23.0
    ```
 
-   产物为 `build/libs/plugin-halo-weapp-0.2.0.jar`。
+   产物为 `build/libs/plugin-halo-weapp-0.2.0.jar`。Halo 只从 jar 的 `extensions/` 发现扩展
+   资源；构建产物必须包含 `extensions/settings.yaml` 与 `extensions/roles.yaml`。
 2. Halo Console → 插件 → 安装/升级并启用。
 3. 填写 AppID/AppSecret、站点展示、最低版本和 HTTPS 隐私政策。
 4. **暗部署阶段保持以下开关关闭**：
@@ -91,8 +92,9 @@ iOS 与 Android 真机验证。
 ./gradlew haloServer -PhaloDevVersion=2.25.4
 ```
 
-v0.2.0 RC 当前有 97 项 Java 自动化测试，覆盖配置门禁、匿名/账号会话、内容安全、频控、幂等、
-读者身份 HMAC、并发首次创建、identityKey 初始化/损坏/丢失、资料修改、退出和注销。
+v0.2.0 RC 当前有 100 项 Java 自动化测试，覆盖配置门禁、插件资源布局、Spring 构造器选择、
+匿名 RBAC、匿名/账号会话、内容安全、频控、幂等、读者身份 HMAC、并发首次创建、identityKey
+初始化/损坏/丢失、资料修改、退出和注销。
 
 ## 文档
 
