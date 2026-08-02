@@ -28,8 +28,13 @@ info:
   contact:
     name: HaloWeApp
     url: https://github.com/xiaoxura/plugin-halo-weapp
+  license:
+    name: GPL-3.0
+    url: https://github.com/xiaoxura/plugin-halo-weapp/blob/main/LICENSE
 servers:
   - url: /apis/api.weapp.halo.run/v1alpha1
+# Halo RBAC 将这些 CustomEndpoint 聚合给 anonymous；业务认证由需要会话的操作单独覆盖。
+security: []
 tags:
   - name: config
     description: 公开运行时配置
@@ -109,7 +114,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SessionResponse'
               example:
-                sessionToken: 9f2c1e7a4b8d4f0a9c3e5b7d1f2a4c6e8b0d2f4a6c8e0b2d4f6a8c0e2b4d6f8a
+                sessionToken: example-opaque-session-token
                 expiresIn: 5400
         '400':
           $ref: '#/components/responses/ValidationError'
@@ -172,6 +177,8 @@ paths:
       tags: [auth]
       operationId: getReaderProfile
       summary: 查询当前微信读者资料
+      security:
+        - WeAppSession: []
       parameters:
         - $ref: '#/components/parameters/SessionHeader'
       responses:
@@ -191,6 +198,8 @@ paths:
       tags: [auth]
       operationId: updateReaderProfile
       summary: 修改当前微信读者昵称
+      security:
+        - WeAppSession: []
       description: >
         要求实时 readerAccount 开关、有效账号会话和当前隐私版本；昵称重新执行频控与
         msgSecCheck。客户端不能修改身份摘要、内部资源名或隐私同意历史。
@@ -235,6 +244,8 @@ paths:
       tags: [auth]
       operationId: logoutReader
       summary: 退出当前设备
+      security:
+        - WeAppSession: []
       description: 立即撤销当前 token，不删除读者资料，也不影响其他设备会话。
       parameters:
         - $ref: '#/components/parameters/SessionHeader'
@@ -248,6 +259,8 @@ paths:
       tags: [auth]
       operationId: deleteReaderAccount
       summary: 注销微信读者账号
+      security:
+        - WeAppSession: []
       description: >
         删除读者资料与可关联身份摘要，并撤销该读者全部内存会话。已经公开发表到 Halo
         的评论不会自动删除；客户端必须在二次确认中明确说明这一点。
@@ -267,6 +280,8 @@ paths:
       tags: [comment]
       operationId: createComment
       summary: 发表文章评论
+      security:
+        - WeAppSession: []
       description: >
         服务端固定处理顺序：
 
@@ -337,6 +352,8 @@ paths:
       tags: [comment]
       operationId: createReply
       summary: 回复指定评论
+      security:
+        - WeAppSession: []
       description: >
         正文规则与评论一致。`quoteReplyName` 可选，只能引用当前评论下已公开的回复。
         服务端校验父评论存在且属于公开文章；同样执行频控、幂等和 `msgSecCheck`。
@@ -400,6 +417,15 @@ paths:
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
 components:
+  securitySchemes:
+    WeAppSession:
+      type: apiKey
+      in: header
+      name: X-WeApp-Session
+      description: >
+        POST /session 或 POST /auth/login 返回的 90 分钟随机不透明 token。
+        auth/profile、auth/session 和 auth/account 仅接受关联 readerName 的账号会话；
+        评论接口同时接受账号会话和不创建账号的临时评论会话。
   parameters:
     SessionHeader:
       name: X-WeApp-Session

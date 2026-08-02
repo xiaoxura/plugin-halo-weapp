@@ -50,7 +50,7 @@
 | T-11 | 受信任代理头伪造来源 IP | 绕过 IP 频控 | 仅配置受信代理时解析 X-Forwarded-For，未配置不盲信客户端 header |
 | T-12 | Halo 内部 API 变动 | 插件在新版本失效 | 只依赖 Public API；2.23.x/2.25.4 双版本集成测试夹具；网关隔离（ADR-0001） |
 | T-13 | 原始 OpenID/完整摘要落盘或进入响应 | 可关联用户身份、违反最小化原则 | HMAC 派生确定性内部名称；WeAppUser 只保存昵称与隐私版本；DTO/错误/日志白名单与敏感词测试 |
-| T-14 | identityKey 泄露、丢失或被设置重置覆盖/静默轮换 | 可离线关联内部身份，或所有账号无法恢复 | 32 字节随机 key；独立内部 ConfigMap，避免设置保存/重置覆盖；加密备份和恢复演练；禁止日志/表单/公开 DTO；轮换必须迁移 |
+| T-14 | identityKey 泄露、丢失或被设置重置覆盖/静默轮换 | 可离线关联内部身份，或所有账号无法恢复 | 32 字节随机 key；独立内部 ConfigMap；加密备份和恢复演练；已有 WeAppUser 时 ConfigMap 缺失/空值直接失败关闭，不自动生成；禁止日志/表单/公开 DTO；轮换必须迁移 |
 | T-15 | 并发首次登录创建重复账号 | 资料分叉、注销不完整 | HMAC 确定性资源名；create 冲突后 fetch；并发自动化测试 |
 | T-16 | 缓存配置创建账号或恢复 token | 远程关闭后仍收集个人信息 | canLogin 必须实时配置成功、版本满足、隐私契约完整；缓存资料不等于认证态 |
 | T-17 | 隐私版本变化后静默恢复/改资料 | 缺少最新同意 | 请求必须回传当前版本；客户端暂停恢复；服务端返回 PRIVACY_CONSENT_REQUIRED |
@@ -75,6 +75,7 @@
 - [ ] 单元测试覆盖 review/risky/超时/未知 suggest 全部失败关闭路径；
 - [ ] 频控触发时无微信/Halo 外部调用（mock 断言）。
 - [ ] 同一 OpenID 并发首次登录只创建一个 WeAppUser，资源/错误/日志无原始 OpenID；
+- [ ] identity ConfigMap 损坏，或已有 WeAppUser 时 ConfigMap 缺失/为空，均失败关闭且不生成 key；
 - [ ] 客户端 storage 扫描无 token、OpenID、identityKey、摘要或内部 readerName；
 - [ ] 退出后当前 token、注销后全部 token 立即失效，资源删除后二次查询失败；
 - [ ] config 公开响应不含 identityKey，所有新 feature 默认 false，缓存不能开启登录/写入；

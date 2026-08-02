@@ -25,6 +25,8 @@ v0.4.0 需要让用户主动建立可感知的“微信读者”身份，同时�
   内部 ConfigMap `plugin-halo-weapp-identity` 的 `identityKey` 数据项。该 ConfigMap 与 Setting
   使用的 `plugin-halo-weapp-configmap` 隔离，避免 Halo 保存或重置插件设置时覆盖密钥；
 - identityKey 不进入 Setting 表单、公开 DTO、日志、错误、jar 资源或测试快照；
+- ConfigMap 缺失或没有 key 时，只有在系统中不存在任何 WeAppUser 才允许按“首次使用”初始化；
+  若已有读者资源则返回 `HALO_UNAVAILABLE` 并等待恢复备份，禁止生成新 key 割裂旧账号；
 - 身份摘要固定为 `HMAC-SHA256(identityKey, appId + ":" + openId)`；AppID 参与输入，切换
   AppID 不会复用旧身份；
 - `WeAppUser.metadata.name` 为 `reader-` 加摘要的稳定 160-bit 十六进制前缀。名称只用于插件
@@ -72,6 +74,7 @@ spec:
 ## 后果
 
 - 账号可跨冷启动、跨设备恢复，同时原始 OpenID 不落盘；
-- 插件停用、开关关闭、identityKey 丢失或微信不可用时身份能力 fail-closed，公开阅读不受影响；
+- 插件停用、开关关闭、identityKey 损坏/丢失且已有读者或微信不可用时身份能力 fail-closed，
+  公开阅读不受影响；
 - identityKey 成为必须备份的高价值服务端资产，运维文档必须覆盖备份、恢复与轮换约束；
 - 微信读者与 Halo User 保持严格隔离，未来若需要作者发布能力必须另立 UC 授权 ADR。

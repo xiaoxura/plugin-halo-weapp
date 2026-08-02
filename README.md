@@ -1,60 +1,107 @@
 # plugin-halo-weapp
 
-[HaloWeApp](https://github.com/xiaoxura/HaloWeApp) 微信小程序的配套 Halo 插件，提供：
+[HaloWeApp](https://github.com/xiaoxura/HaloWeApp) 微信小程序的配套 Halo 插件。
 
-- **公开配置下发**（`GET /apis/api.weapp.halo.run/v1alpha1/config`）：
-  站点展示、分页、字体、评论开关、公告、最低版本、隐私政策等，不发版即可调整；
-- **微信登录短会话**（`POST .../session`）：`wx.login` code 换取 90 分钟不透明
-  token，AppSecret / OpenID / session_key 不出服务端；
-- **安全评论/回复写入**（`POST .../comments`、`POST .../comments/{name}/replies`）：
-  登录态、频控、幂等、微信 `msgSecCheck`（仅 `pass`）全部通过后才代理
-  Halo Public Comment API 写入。
+当前开发版本为 **v0.2.0 RC**，配套 HaloWeApp v0.4.0。接口契约的唯一事实来源是
+[docs/openapi.yaml](docs/openapi.yaml)；发布前验证状态见客户端仓库的
+[v0.4.0 RC 清单](https://github.com/xiaoxura/HaloWeApp/blob/develop/v0.4.0/docs/release-checklist-v0.4.0.md)。
 
-接口契约的唯一事实来源：[docs/openapi.yaml](docs/openapi.yaml)。
+## 能力
 
-## 安全模型
+- **公开配置**（`GET /apis/api.weapp.halo.run/v1alpha1/config`）：站点展示、分页、字体、
+  评论、公告、最低版本、隐私版本，以及默认关闭的 Moment / 微信读者开关；
+- **匿名评论短会话**（`POST .../session`）：兼容 HaloWeApp v0.3.0，`wx.login` code 换取
+  90 分钟不透明 token，不创建持久账号；
+- **微信读者身份**（`/auth/login`、`/auth/profile`、`/auth/session`、`/auth/account`）：
+  用户主动同意后创建/恢复最小化资料，支持修改昵称、退出和注销；
+- **文章评论/回复安全网关**（`POST .../comments`、`POST .../comments/{name}/replies`）：
+  会话、频控、幂等和微信 `msgSecCheck`（仅 `pass`）全部通过后才代理写入 Halo；
+- **可选 Moment 能力配置**：只下发公开读取意图；Moment 数据由客户端固定访问
+  `PluginMoments >= 1.15.0` 的匿名 Public API，本插件不代理私有内容。
 
-- 评论读取仍直接使用 Halo Public API，不经过本插件；
-- 写能力 fail-closed：插件停用、配置异常、微信服务不可用时自动降级为只读；
-- AppSecret 使用密码字段存储，日志全链路脱敏，详见
-  [docs/threat-model.md](docs/threat-model.md)。
-- Halo 管理员 PAT 不进入小程序包，插件也不持有或伪造管理员身份；公开读取接口无需 PAT。
+v0.2.0 不实现 Moment 评论写入。`momentCommentEnabled` 仅为 v0.4.1 预留且默认关闭。
+
+## 身份与安全边界
+
+- 微信读者不是 Halo Console / UC 用户，不拥有 Halo 角色，不能读取私有文章或私有 Moment；
+- AppSecret 使用 Halo Setting 密码字段；access token、session_key 和原始 OpenID 不持久化、
+  不返回客户端、不写日志；
+- `WeAppUser` 只保存 2～20 字昵称与隐私政策版本，内部名称来自
+  `HMAC-SHA256(identityKey, appId + ":" + openId)` 的截断摘要；
+- 32 字节 identityKey 存在独立内部 ConfigMap `plugin-halo-weapp-identity`，不进入 Setting、
+  公开 DTO、日志或 jar；它必须与 WeAppUser 一起加密备份；
+- 若已有 WeAppUser 而 identity ConfigMap 缺失或为空，插件会**失败关闭**，不会静默生成新密钥
+  并割裂旧账号；
+- 所有新开关默认关闭。插件/微信/Halo 上游不可用、隐私版本不一致或客户端版本过低时，登录和
+  写入 fail-closed，公开阅读不受影响；
+- 插件不持有 Halo 管理员 PAT，也不伪造管理员身份。
+
+完整分析见 [威胁模型](docs/threat-model.md)、
+[微信读者 ADR](docs/adr/0003-wechat-reader-identity.md) 和
+[Moment ADR](docs/adr/0004-public-moment-integration.md)。
 
 ## 环境要求
 
-- Halo `>= 2.23.0`（已在 2.23.x 与 2.25.4 验证）
-- 构建：JDK 21 + Gradle Wrapper（`./gradlew build`）
-- Halo 后台需启用评论组件并允许游客评论（插件仅代理公开评论 API，不持有任何凭据）
+| 项目 | 要求 |
+| --- | --- |
+| Halo | `>= 2.23.0` |
+| Java / 构建 | JDK 21 + Gradle Wrapper |
+| Halo 评论 | 启用评论组件并允许游客评论 |
+| 微信 | 小程序 AppID / AppSecret；需配置并核对隐私保护指引 |
+| Moment | 可选；`PluginMoments >= 1.15.0`，推荐 v1.16.1 |
 
-## 安装与配置
+CI 会分别用 Halo plugin API platform 2.23.0 和 2.25.0 编译并运行测试；Halo 2.25.4 的
+`haloServer` 仅是默认本地调试目标。编译测试不等于真实 Halo 部署、微信或双真机证据，发布前
+仍须按 [deployment.md](docs/deployment.md) 完成目标环境矩阵。
 
-1. 在 [Releases](https://github.com/xiaoxura/plugin-halo-weapp/releases) 下载 jar，
-   或本地 `./gradlew build` 后取 `build/libs/plugin-halo-weapp-<version>.jar`；
-2. Halo 后台 → 插件 → 安装并启用；
-3. 打开插件设置：
-   - **微信小程序**：填入 AppID / AppSecret（仅服务端保存）；
-   - **站点展示**：配置博客名称、简介、分页大小和可选字体 URL；
-   - **评论**：三个开关默认全部关闭，提审期间保持关闭；
-   - **公告 / 版本与隐私**：按需配置；
-4. 小程序端只需在 `config/index.js` 配置版本和 Halo `baseUrl`；插件名称与 API 路径是
-   双端固定协议，无需重复填写。
+## 安装与初始配置
 
-字体 URL 必须使用 HTTPS，并将其域名加入微信小程序的 `downloadFile` 合法域名；留空时
-客户端使用系统字体。
+1. 从 [Releases](https://github.com/xiaoxura/plugin-halo-weapp/releases) 下载 jar，或本地构建：
 
-## 本地开发
+   ```bash
+   ./gradlew clean build -PhaloApiVersion=2.23.0
+   ```
+
+   产物为 `build/libs/plugin-halo-weapp-0.2.0.jar`。
+2. Halo Console → 插件 → 安装/升级并启用。
+3. 填写 AppID/AppSecret、站点展示、最低版本和 HTTPS 隐私政策。
+4. **暗部署阶段保持以下开关关闭**：
+   - 瞬间展示、瞬间评论展示、微信读者登录；
+   - 评论区展示、评论提交、回复提交。
+5. 先验证公开 config 无内部身份字段、旧 v0.3.0 客户端无回归，再依次灰度 Moment 读取、
+   微信读者登录和文章评论。
+
+首次开放读者登录前必须备份并核验两个 ConfigMap；升级/恢复顺序、identityKey 指纹校验和
+v0.1.0 回滚方法见 [部署、升级、备份与回滚](docs/deployment.md)。
+
+字体、图片、视频和音频 URL 必须为 HTTPS，并将实际最终 origin 加入微信小程序
+`downloadFile` 合法域名；站点 origin 还需加入 `request` 合法域名。域名配置必须在开启校验的
+iOS 与 Android 真机验证。
+
+## 本地开发与测试
 
 ```bash
-./gradlew build          # 构建 + 测试
-./gradlew haloServer     # 启动本地 Halo 2.25.4 调试实例（可选）
+# 默认以最低 API 2.23.0 构建正式兼容产物
+./gradlew clean build -PhaloApiVersion=2.23.0
+
+# 较新 API 编译/测试矩阵（Halo 2.25.4 runtime 对应已发布 API platform 2.25.0）
+./gradlew clean test -PhaloApiVersion=2.25.0
+
+# 可选：启动本地 Halo 2.25.4 调试实例
+./gradlew haloServer -PhaloDevVersion=2.25.4
 ```
+
+v0.2.0 RC 当前有 97 项 Java 自动化测试，覆盖配置门禁、匿名/账号会话、内容安全、频控、幂等、
+读者身份 HMAC、并发首次创建、identityKey 初始化/损坏/丢失、资料修改、退出和注销。
 
 ## 文档
 
-- [docs/openapi.yaml](docs/openapi.yaml) — API 契约（唯一事实来源）
-- [docs/threat-model.md](docs/threat-model.md) — 威胁模型
-- [docs/adr/](docs/adr/) — 架构决策记录
-- [docs/deployment.md](docs/deployment.md) — 部署、升级与回滚
+- [OpenAPI](docs/openapi.yaml) — API 契约唯一事实来源
+- [部署、升级、备份与回滚](docs/deployment.md)
+- [隐私实施指南](docs/privacy.md)
+- [威胁模型](docs/threat-model.md)
+- [架构决策记录](docs/adr/)
+- [变更日志](CHANGELOG.md)
 
 ## License
 

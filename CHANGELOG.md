@@ -4,15 +4,52 @@
 
 ## [未发布]
 
+目标版本：plugin-halo-weapp v0.2.0，配套 HaloWeApp v0.4.0。当前为 RC 开发分支；生产暗部署、
+双 Halo 运行时/双真机和回滚演练完成前不创建 v0.2.0 tag。
+
 ### 新增
 
 - 公开配置 `features.moments` / `features.readerAccount` 节点与 Halo Setting 开关，默认全部关闭
-- 微信读者登录、资料、退出与注销 OpenAPI 契约，以及身份最小化和 Moment 集成 ADR
-- identityKey、WeAppUser、缓存门禁与可选 Moment 依赖的威胁模型
+- 微信读者 OpenAPI 与端点：登录/恢复、查询/修改资料、退出当前会话和注销账号；错误使用稳定
+  `READER_NOT_FOUND`、`READER_ACCOUNT_DISABLED`、`PRIVACY_CONSENT_REQUIRED` 等业务码
+- `WeAppUser` 内部扩展，只持久化昵称与隐私版本；scheme 不聚合到匿名角色
+- `IdentityKeyService`：独立 `plugin-halo-weapp-identity` ConfigMap、32 字节安全随机 key、
+  HMAC-SHA256 确定性资源名、并发单飞初始化和损坏失败关闭
+- 同一 OpenID 首次并发登录幂等创建；create 冲突后 fetch，避免重复身份资源
+- 账号会话复用既有随机 token/TTL 协议并关联 readerName；退出撤销当前 token，注销删除资源并
+  撤销该读者全部会话，匿名评论短会话保持兼容且不创建账号
+- 首次昵称和资料修改的 Unicode 长度校验、频控、当前隐私版本校验与微信 `msgSecCheck`
+- 微信读者身份 ADR、公开 Moment 集成 ADR、v0.2.0 OpenAPI 与扩展威胁模型
+- Halo API 2.23.0 / 2.25.0 编译测试矩阵和 develop/v0.2.0 CI；默认正式产物仍以最低
+  API 2.23.0 构建
 
 ### 变更
 
 - 插件开发版本升级为 0.2.0；配置 schemaVersion 保持 1，仅增加向后兼容可选节点
+- `SessionService` 支持账号会话精确撤销与按 readerName 全部撤销，原 v0.1.0 评论会话路径不变
+- 部署文档扩展为 v0.2.0 暗部署、独立 identity ConfigMap/WeAppUser 备份恢复、分级开关和
+  v0.3.0 + 插件 v0.1.0 回滚路径
+
+### 安全
+
+- AppSecret、access token、session_key、原始 OpenID、identityKey、完整摘要和内部 readerName
+  不进入公开 config、auth DTO、错误、日志或客户端
+- HMAC 输入绑定 AppID；WeAppUser 资源名仅保留 160-bit 摘要前缀，spec 不保存 OpenID、AppID、
+  token、头像、邮箱、手机号或网站
+- readerAccount 实时开关、客户端 SemVer、HTTPS 隐私 URL和完全一致的隐私版本在登录/资料修改
+  时重新校验；开关关闭、配置失败、未知微信结果均 fail-closed
+- 已存在 WeAppUser 时若 identity ConfigMap 缺失或 key 为空，身份服务返回
+  `HALO_UNAVAILABLE`，禁止静默生成新 key 导致旧账号不可定位
+- 注销仅删除微信读者资源和账号会话；既有公开 Halo 评论不会自动删除，OpenAPI、隐私和客户端
+  二次确认统一说明
+
+### 验证
+
+- 97 项 Java 自动化测试在 Halo plugin API platform 2.23.0 与 2.25.0 均通过
+- `./gradlew clean build -PhaloApiVersion=2.23.0` 作为最终兼容产物门禁；OpenAPI 重复键、
+  资源默认开关和敏感值扫描纳入 RC 清单
+- 编译/Mock 测试不能替代 Halo 2.23.x / 2.25.4 实际部署、真实微信登录、identityKey 恢复和
+  v0.1.0 回滚演练；这些证据完成前保持未发布
 
 ## [0.1.0] - 2026-08-02
 
