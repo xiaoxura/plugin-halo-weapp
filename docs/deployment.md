@@ -3,6 +3,10 @@
 > 适用目标：HaloWeApp v0.4.0 + plugin-halo-weapp v0.2.0。
 > 当前文档描述 RC 流程，不表示生产演练已经完成。实际证据和未验证项必须写入
 > [HaloWeApp v0.4.0 发布清单](https://github.com/xiaoxura/HaloWeApp/blob/develop/v0.4.0/docs/release-checklist-v0.4.0.md)。
+>
+> **P0 回滚更正**：已发布的 v0.1.0 在 Halo 生产运行时无法正常启动，不能继续作为回滚
+> 基线。唯一已通过本机 Halo 2.23.3/2.25.4 二进制闭环的维护候选是
+> `hotfix/v0.1.1` / `cfaa16f`；其正式 tag/Release 完成前，第五级回滚门禁仍未关闭。
 
 ## 1. 支持边界
 
@@ -19,14 +23,19 @@
 
 | 小程序 | 配套插件 | 行为 |
 | --- | --- | --- |
-| v0.3.0 | v0.1.0 | 已打 tag 的正式回滚基线 |
+| v0.3.0 | v0.1.0 | **禁止**：tag 存在，但 Setting 布局、Spring 构造器选择和 config RBAC 在真实 Halo 失败 |
+| v0.3.0 | v0.1.1 | 已通过双 Halo 本机回滚候选；正式维护 tag/Release 尚待完成 |
 | v0.3.0 | v0.2.0 | `/config`、`/session` 和文章评论保持兼容；新可选字段被旧客户端忽略 |
-| v0.4.0 | v0.1.0 | 新 `features`/auth API 缺失，Moment 与读者身份 fail-closed；旧文章能力可读 |
+| v0.4.0 | v0.1.1 | 新 `features`/auth API 缺失，Moment 与读者身份 fail-closed；旧文章能力可读 |
 | v0.4.0 | v0.2.0 | 目标组合；新开关仍须按阶段显式开启 |
 
 RC 已取得 Halo 2.23.3 / 2.25.4 隔离 H2 运行时的插件冷启动、匿名路由和 Moment 启停升级证据，
 但“协议上兼容”和本机 H2 冒烟都不替代目标环境演练。发布前仍必须验证旧 v0.3.0
 config/session/文章评论，以及 v0.4.0 的 Moment 降级和读者账号闭环。
+
+v0.1.1 候选 jar（`cfaa16f`）为 117572 bytes，SHA-256
+`6c2cfc04ff883fe823eb64a69a0d47dc4ffbaac07e2744ce0cc548c79634c40c`；双 Halo 直接证据见
+[维护候选验证记录](https://github.com/xiaoxura/plugin-halo-weapp/blob/hotfix/v0.1.1/docs/release-validation-v0.1.1.md)。正式 Release 必须从最终 tag 重建，不能把候选哈希当作永久供应链证明。
 
 ## 2. 受保护数据与备份范围
 
@@ -118,10 +127,13 @@ jar tf build/libs/plugin-halo-weapp-0.2.0.jar \
 替代 jar。Setting 必须位于 `extensions/settings.yaml`；若只出现在 jar 根目录，Halo 编译测试仍
 可能通过，但生产插件协调器会持续报告找不到 Setting 扩展并拒绝正常启动。
 
-## 4. 从 v0.1.0 升级到 v0.2.0
+## 4. 从 v0.1.1 升级到 v0.2.0
 
-1. 在 v0.1.0 Setting 中关闭评论提交/回复；记录公开 config 并完成旧客户端冒烟测试。
-2. 执行第 2 节完整备份。v0.1.0 尚无 identity ConfigMap/WeAppUser 属正常情况。
+v0.1.0 不得继续运行或用于升级验证；尚在该版本的站点应直接升级至 v0.1.1 或 v0.2.0。
+需要保留可执行回滚路径时，必须先完成 v0.1.1 正式维护发布及其产物哈希核对。
+
+1. 在 v0.1.1 Setting 中关闭评论提交/回复；记录公开 config 并完成旧客户端冒烟测试。
+2. 执行第 2 节完整备份。v0.1.x 尚无 identity ConfigMap/WeAppUser 属正常情况。
 3. 安装 v0.2.0 jar 并启用；不要删除或重建 Setting ConfigMap。
 4. 打开设置并确认新增开关均保持默认关闭：
    - `momentsEnabled=false`；
@@ -211,18 +223,23 @@ v0.2.0 的 identity ConfigMap 仅在首次实际使用读者身份时按需生�
 | 二级 | 评论 submit/reply false | 立即关闭文章写入；已打开表单最终也由服务端拒绝 |
 | 三级 | `momentsEnabled=false` | 首页模块隐藏，深链显示不可用；文章能力保留 |
 | 四级 | 停用 `PluginMoments` | 文章、分类、标签和文章搜索继续工作 |
-| 五级 | 插件回滚 v0.1.0 + 小程序回滚 v0.3.0 | 回到已打 tag 的正式组合 |
+| 五级 | 插件回滚 v0.1.1 + 小程序回滚 v0.3.0 | 回到已验证维护候选；正式启用前必须先完成 v0.1.1 tag/Release |
 
 执行第五级回滚前：
 
 1. 完成 v0.2.0 全量备份并保存 identityKey 指纹；
 2. 关闭所有新 feature 和文章评论写入；
-3. 安装 v0.1.0 jar，恢复 v0.1.0 Setting ConfigMap（如确有必要）；
-4. **保留** `plugin-halo-weapp-identity` 和 WeAppUser，不在紧急回滚时清理读者资料；
-5. 发布/回退 HaloWeApp v0.3.0；验证 config、session、文章读取和评论；
-6. 恢复 v0.2.0 时先恢复配套 identity/WeAppUser，再按第 6 节演练。
+3. 停用并卸载 v0.2.0；Halo 删除 Setting 属已观察行为，但必须立即确认
+   `plugin-halo-weapp-configmap` 仍存在且数据哈希与备份一致；
+4. 安装已核验 SHA-256 的 v0.1.1 jar；确认插件 `STARTED`、Setting 重建、ConfigMap 哈希不变，
+   匿名 `/config` 返回 200 JSON，`/session` 与文章评论路由进入业务错误而非 `/login`；
+5. v0.1.1 Setting 中的 `features` 组仅用于保留 v0.2.0 ConfigMap 数据，在该版本完全不生效；
+   **保留** `plugin-halo-weapp-identity` 和 WeAppUser，不在紧急回滚时清理读者资料；
+6. 发布/回退 HaloWeApp v0.3.0；验证 config、session、文章读取和评论；
+7. 恢复 v0.2.0 时先恢复配套 identity/WeAppUser，再按第 6 节演练；等待 Setting schema
+   协调完成，并再次核对 ConfigMap、identityKey 指纹、匿名路由和已有账号。
 
-v0.4.0 客户端在 v0.1.0 插件下会安全关闭账号和 Moment 新能力，但正式回滚应同时恢复
+v0.4.0 客户端在 v0.1.1 插件下会安全关闭账号和 Moment 新能力，但正式回滚应同时恢复
 v0.3.0，以获得已验收且可定位的完整组合。
 
 ## 8. 安全运维与隐私
@@ -239,10 +256,13 @@ v0.3.0，以获得已验收且可定位的完整组合。
 ## 9. 发布签字清单
 
 - [ ] Halo 2.23.x 与 2.25.4 目标环境部署/回滚记录齐全；
+- [x] Halo 2.23.3 与 2.25.4 本机隔离运行时完成 v0.2.0 → v0.1.1 → v0.2.0，
+  ConfigMap/Moment 保留且 Setting/匿名路由恢复；
+- [ ] v0.1.1 最终提交、CI、tag、GitHub Release jar 和 SHA-256 一致；
 - [ ] Moment 1.15.x / 1.16.1 与 iOS/Android 媒体矩阵完成；
 - [ ] 两个 ConfigMap + 全部 WeAppUser + 评论的备份和恢复演练完成；
 - [ ] identityKey 长度/指纹一致，已有账号无昵称恢复成功；
-- [ ] v0.3.0 + v0.1.0 回滚路径实际执行成功；
+- [ ] 目标环境使用 v0.3.0 + v0.1.1 回滚路径实际执行成功；
 - [ ] 新 feature 初始均 false，公开 config/日志/错误敏感值扫描通过；
 - [ ] 真实登录、恢复、退出、注销、隐私升级和插件重启记录齐全；
 - [ ] 微信隐私保护指引、站点隐私政策与实际字段/时机/注销行为一致；

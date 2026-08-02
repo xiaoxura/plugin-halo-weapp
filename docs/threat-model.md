@@ -58,6 +58,7 @@
 | T-19 | 可配置插件名/路径探测内网或任意 API | 客户端被导向非预期资源 | PluginMoments 名称与 available/Public API 路径编译期固定；页面不拼 endpoint |
 | T-20 | Moment HTML/未知媒体执行脚本或危险 URL | XSS、协议滥用、页面崩溃 | adapter 白名单；既有 HTML sanitizer；只接受 HTTPS；未知媒体不可执行占位；媒体生命周期释放 |
 | T-21 | 陈旧 Moment 索引制造死链 | 用户进入不存在/停用内容 | 当前冷启动 available 探测；功能关闭时过滤 Moment 命中；详情 404/不可用独立状态 |
+| T-22 | 回滚到不可启动旧 jar，或旧 Setting 协调删除新 ConfigMap 组 | 紧急回滚扩大故障、配置丢失且无法重新灰度 | 禁用 v0.1.0；v0.1.1 修复资源布局/构造器/RBAC并携带不生效的前向 feature 组；双 Halo 往返验证；回滚前完整备份并逐阶段核对资源哈希 |
 
 ## 4. 明确的非目标
 
@@ -80,3 +81,5 @@
 - [ ] 退出后当前 token、注销后全部 token 立即失效，资源删除后二次查询失败；
 - [ ] config 公开响应不含 identityKey，所有新 feature 默认 false，缓存不能开启登录/写入；
 - [ ] Moment HTML、PHOTO/VIDEO/AUDIO/POST/未知媒体与相对 URL 降级测试通过。
+- [ ] v0.1.1 正式产物/tag 哈希一致；目标环境执行 v0.2.0 → v0.1.1 → v0.2.0 后
+  ConfigMap、identityKey/WeAppUser、Setting、旧客户端与 Moment 均保持可用。

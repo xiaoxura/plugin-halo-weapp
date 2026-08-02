@@ -5,7 +5,8 @@
 ## [未发布]
 
 目标版本：plugin-halo-weapp v0.2.0，配套 HaloWeApp v0.4.0。当前为 RC 开发分支；目标环境暗部署、
-双真机、真实微信和恢复/回滚演练完成前不创建 v0.2.0 tag。
+双真机、真实微信和恢复/回滚演练完成前不创建 v0.2.0 tag。v0.1.0 真实运行时回滚失败，必须先
+完成 `hotfix/v0.1.1` 的正式维护发布，才能建立可执行的二进制回滚基线。
 
 ### 新增
 
@@ -28,7 +29,7 @@
 - 插件开发版本升级为 0.2.0；配置 schemaVersion 保持 1，仅增加向后兼容可选节点
 - `SessionService` 支持账号会话精确撤销与按 readerName 全部撤销，原 v0.1.0 评论会话路径不变
 - 部署文档扩展为 v0.2.0 暗部署、独立 identity ConfigMap/WeAppUser 备份恢复、分级开关和
-  v0.3.0 + 插件 v0.1.0 回滚路径
+  v0.3.0 + 插件 v0.1.1 回滚路径；明确禁止使用不可执行的 v0.1.0 tag
 - Setting 扩展定义移至 jar 的 `extensions/settings.yaml`，与 Halo 生产插件加载器的发现目录一致；
   新增资源布局回归测试，禁止只在 jar 根目录保留 `settings.yaml`
 - 对存在测试构造器的 Spring 组件显式选择生产注入构造器，避免真实 Halo 启动时因多构造器而
@@ -56,8 +57,12 @@
   资源默认开关和敏感值扫描纳入 RC 清单
 - Halo 2.23.3 与 2.25.4 隔离 H2 运行时均已验证 Setting/ConfigMap 初始化、插件冷启动、公开
   配置和全部匿名 auth/评论路由；两端还完成 Moment 1.15.0 → 1.16.1 启停、升级和数据保留冒烟
+- `hotfix/v0.1.1` / `cfaa16f` 在相同双 Halo 运行时完成 v0.2.0 → v0.1.1 → v0.2.0：
+  v0.1.1 `STARTED`，旧路由为 JSON，ConfigMap/Moment 保留，再升级后 Setting 与全部路由恢复
+- v0.1.1 GitHub Actions [run 30741013676](https://github.com/xiaoxura/plugin-halo-weapp/actions/runs/30741013676)
+  的 Halo API 2.23.0/2.25.0 矩阵及最低版本 jar build 全部成功
 - 编译/Mock 与本机 H2 测试不能替代目标环境暗部署、真实微信登录、identityKey 恢复、双真机和
-  v0.1.0 回滚演练；这些证据完成前保持未发布
+  v0.1.1 正式维护发布/目标环境回滚演练；这些证据完成前保持未发布
 
 ## [0.1.0] - 2026-08-02
 

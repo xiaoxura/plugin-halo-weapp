@@ -74,7 +74,9 @@ Halo 2.23.3 与 2.25.4 H2 运行时完成插件冷启动、匿名 API 和 Moment
    微信读者登录和文章评论。
 
 首次开放读者登录前必须备份并核验两个 ConfigMap；升级/恢复顺序、identityKey 指纹校验和
-v0.1.0 回滚方法见 [部署、升级、备份与回滚](docs/deployment.md)。
+v0.1.1 回滚方法见 [部署、升级、备份与回滚](docs/deployment.md)。已发布的 v0.1.0 tag
+不满足 Halo 生产资源发现、Spring 注入和匿名 config 授权要求，禁止作为回滚版本；维护候选及
+双 Halo 证据见 [`hotfix/v0.1.1` 的验证记录](https://github.com/xiaoxura/plugin-halo-weapp/blob/hotfix/v0.1.1/docs/release-validation-v0.1.1.md)。
 
 字体、图片、视频和音频 URL 必须为 HTTPS，并将实际最终 origin 加入微信小程序
 `downloadFile` 合法域名；站点 origin 还需加入 `request` 合法域名。域名配置必须在开启校验的
