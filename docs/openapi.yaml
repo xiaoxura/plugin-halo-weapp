@@ -296,6 +296,31 @@ components:
           type: string
           format: date-time
           description: 配置生成时间（服务端时钟）
+        site:
+          type: object
+          description: >
+            小程序站点展示配置。为保持与 plugin-halo-weapp v0.1.0 初版响应兼容，
+            该节点在 schemaVersion=1 中是可选字段；新版插件始终返回，客户端缺失时使用内置默认值。
+          required: [blogName, blogDesc, pageSize, fontUrl]
+          properties:
+            blogName:
+              type: string
+              description: “我的”页面展示的博客名称
+              example: 我的博客
+            blogDesc:
+              type: string
+              description: 博客简介，允许为空
+              example: 记录技术 · 记录生活
+            pageSize:
+              type: integer
+              minimum: 1
+              maximum: 100
+              description: 首页及分类、标签文章列表的分页大小
+              example: 10
+            fontUrl:
+              type: string
+              description: 可选的 HTTPS 字体文件地址；空字符串表示使用系统字体
+              example: ''
         commentEnabled:
           type: boolean
           description: 评论区是否展示（读取）

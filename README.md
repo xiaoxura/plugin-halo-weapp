@@ -3,7 +3,7 @@
 [HaloWeApp](https://github.com/xiaoxura/HaloWeApp) 微信小程序的配套 Halo 插件，提供：
 
 - **公开配置下发**（`GET /apis/api.weapp.halo.run/v1alpha1/config`）：
-  评论开关、公告、最低版本、隐私政策等，不发版即可调整；
+  站点展示、分页、字体、评论开关、公告、最低版本、隐私政策等，不发版即可调整；
 - **微信登录短会话**（`POST .../session`）：`wx.login` code 换取 90 分钟不透明
   token，AppSecret / OpenID / session_key 不出服务端；
 - **安全评论/回复写入**（`POST .../comments`、`POST .../comments/{name}/replies`）：
@@ -18,6 +18,7 @@
 - 写能力 fail-closed：插件停用、配置异常、微信服务不可用时自动降级为只读；
 - AppSecret 使用密码字段存储，日志全链路脱敏，详见
   [docs/threat-model.md](docs/threat-model.md)。
+- Halo 管理员 PAT 不进入小程序包，插件也不持有或伪造管理员身份；公开读取接口无需 PAT。
 
 ## 环境要求
 
@@ -32,9 +33,14 @@
 2. Halo 后台 → 插件 → 安装并启用；
 3. 打开插件设置：
    - **微信小程序**：填入 AppID / AppSecret（仅服务端保存）；
+   - **站点展示**：配置博客名称、简介、分页大小和可选字体 URL；
    - **评论**：三个开关默认全部关闭，提审期间保持关闭；
    - **公告 / 版本与隐私**：按需配置；
-4. 小程序端将 `config.remoteConfig` 指向本插件的 config 接口。
+4. 小程序端只需在 `config/index.js` 配置版本和 Halo `baseUrl`；插件名称与 API 路径是
+   双端固定协议，无需重复填写。
+
+字体 URL 必须使用 HTTPS，并将其域名加入微信小程序的 `downloadFile` 合法域名；留空时
+客户端使用系统字体。
 
 ## 本地开发
 

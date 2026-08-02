@@ -17,6 +17,31 @@ spec:
           label: 小程序 AppSecret
           validation: required
           help: 仅保存在服务端，任何接口与日志都不会输出
+    - group: site
+      label: 站点展示
+      formSchema:
+        - $formkit: text
+          name: blogName
+          label: 博客名称
+          help: 显示在小程序“我的”页面
+          value: "我的博客"
+          validation: required
+        - $formkit: text
+          name: blogDesc
+          label: 博客简介
+          help: 显示在博客名称下方，允许留空
+          value: "记录技术 · 记录生活"
+        - $formkit: number
+          name: pageSize
+          label: 每页文章数
+          help: 首页及分类、标签文章列表的分页大小（1～100）
+          value: 10
+          validation: min:1|max:100
+        - $formkit: text
+          name: fontUrl
+          label: 自定义字体 URL
+          help: 可选；必须是已加入小程序 downloadFile 合法域名的 HTTPS 字体地址
+          value: ""
     - group: comment
       label: 评论
       formSchema:

@@ -32,6 +32,12 @@ class SettingsServiceTest {
         assertEquals(3, comment.rateLimitPerMinute());
         assertEquals(20, comment.rateLimitPerHour());
 
+        SettingsService.SiteConfig site = settings.site();
+        assertEquals("我的博客", site.blogName());
+        assertEquals("记录技术 · 记录生活", site.blogDesc());
+        assertEquals(10, site.pageSize());
+        assertEquals("", site.fontUrl());
+
         SettingsService.ClientConfig client = settings.client();
         assertEquals("0.3.0", client.minVersion());
         assertEquals(5000L, client.upstreamTimeoutMillis());
@@ -49,6 +55,7 @@ class SettingsServiceTest {
         assertFalse(settings.comment().submitEnabled());
         assertEquals(500, settings.comment().maxLength());
         assertEquals(5000L, settings.client().upstreamTimeoutMillis());
+        assertEquals(10, settings.site().pageSize());
         assertFalse(settings.wechat().isConfigured());
     }
 
@@ -56,12 +63,19 @@ class SettingsServiceTest {
     void fallsBackPerFieldWhenFieldsAreNull() {
         when(fetcher.fetch("comment", CommentSettings.class)).thenReturn(Optional.of(
             new CommentSettings(true, true, null, null, -1, null)));
+        when(fetcher.fetch("site", SiteSettings.class)).thenReturn(Optional.of(
+            new SiteSettings(" ", null, 101, "http://unsafe.example/font.woff2")));
         SettingsService.CommentConfig comment = settings.comment();
         assertTrue(comment.commentEnabled());
         assertTrue(comment.submitEnabled());
         assertFalse(comment.replyEnabled());
         assertEquals(500, comment.maxLength());
         assertEquals(3, comment.rateLimitPerMinute());
+        SettingsService.SiteConfig site = settings.site();
+        assertEquals("我的博客", site.blogName());
+        assertEquals("记录技术 · 记录生活", site.blogDesc());
+        assertEquals(10, site.pageSize());
+        assertEquals("", site.fontUrl());
     }
 
     @Test
@@ -70,12 +84,19 @@ class SettingsServiceTest {
             .thenReturn(Optional.of(new WechatSettings("wx-app-id", "wx-secret")));
         when(fetcher.fetch("client", ClientSettings.class)).thenReturn(Optional.of(
             new ClientSettings("0.4.0", "https://example.com/privacy", "2026-08-01", 8000L)));
+        when(fetcher.fetch("site", SiteSettings.class)).thenReturn(Optional.of(
+            new SiteSettings("技术博客", "Halo 驱动", 20, "https://cdn.example.com/font.woff2")));
 
         assertTrue(settings.wechat().isConfigured());
         SettingsService.ClientConfig client = settings.client();
         assertEquals("0.4.0", client.minVersion());
         assertEquals("2026-08-01", client.privacyPolicyVersion());
         assertEquals(8000L, client.upstreamTimeoutMillis());
+        SettingsService.SiteConfig site = settings.site();
+        assertEquals("技术博客", site.blogName());
+        assertEquals("Halo 驱动", site.blogDesc());
+        assertEquals(20, site.pageSize());
+        assertEquals("https://cdn.example.com/font.woff2", site.fontUrl());
     }
 
     @Test
@@ -84,21 +105,27 @@ class SettingsServiceTest {
             .thenReturn(Optional.of(new WechatSettings("wx-app-id", "super-secret-value")));
         when(fetcher.fetch("comment", CommentSettings.class)).thenReturn(Optional.of(
             new CommentSettings(true, true, false, 300, 5, 30)));
+        when(fetcher.fetch("site", SiteSettings.class)).thenReturn(Optional.of(
+            new SiteSettings("技术博客", "Halo 驱动", 20, "https://cdn.example.com/font.woff2")));
         when(fetcher.fetch("announcement", AnnouncementSettings.class)).thenReturn(
             Optional.of(new AnnouncementSettings(true, "v1", "hello")));
         when(fetcher.fetch("client", ClientSettings.class)).thenReturn(Optional.of(
             new ClientSettings("0.3.0", "https://example.com/privacy", "2026-08-01", 5000L)));
 
-        PublicConfig config = PublicConfig.from(settings.comment(), settings.announcement(),
-            settings.client());
+        PublicConfig config = PublicConfig.from(settings.site(), settings.comment(),
+            settings.announcement(), settings.client());
         assertEquals(1, config.schemaVersion());
 
         String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(config);
         assertFalse(json.contains("super-secret-value"));
         assertFalse(json.contains("appSecret"));
+        assertFalse(json.contains("adminToken"));
+        assertFalse(json.contains("pat_"));
         assertFalse(json.contains("wx-app-id"));
         assertTrue(json.contains("\"maxLength\":300"));
         assertTrue(json.contains("\"nicknameRequired\":true"));
+        assertTrue(json.contains("\"blogName\":\"技术博客\""));
+        assertTrue(json.contains("\"pageSize\":20"));
         assertTrue(json.contains("\"privacyPolicyVersion\":\"2026-08-01\""));
     }
 }

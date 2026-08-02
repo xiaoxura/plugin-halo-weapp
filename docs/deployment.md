@@ -15,6 +15,7 @@
 1. 安装 `build/libs/plugin-halo-weapp-0.1.0.jar`（Halo 后台 → 插件 → 安装）并启用；
 2. 打开插件设置：
    - **微信小程序**：填入 AppID / AppSecret（AppSecret 仅服务端保存）；
+   - **站点展示**：填写博客名称、简介、每页文章数和可选字体 URL；
    - **评论**：三个开关保持**关闭**（默认）；
    - **版本与隐私**：填入隐私政策 HTTPS URL 与版本；
 3. 验证公开配置（应只含白名单字段，无 AppSecret/OpenID）：
@@ -28,16 +29,17 @@
 
 ## 阶段 B：小程序发布
 
-1. `config/index.js` 中配置：
+1. `config/index.js` 中只配置小程序版本和 Halo 站点地址：
 
    ```js
-   remoteConfig: {
-     enabled: true,
-     pluginName: 'plugin-halo-weapp',
-     endpoint: '/apis/api.weapp.halo.run/v1alpha1/config',
-     cacheTtl: 21600000
+   module.exports = {
+     version: '0.3.0',
+     baseUrl: 'https://<你的站点>'
    }
    ```
+
+   插件名称与 API 路径已经固化在客户端协议中。不要在小程序配置中加入 Halo 管理员
+   PAT、AppSecret 或其他长期凭据；它们会随小程序包公开。
 
 2. 发布 v0.3.0（默认只读：插件侧开关全关，小程序无 UGC 入口）；
 3. 完成微信隐私保护指引（声明：昵称、评论内容、服务端临时 OpenID 的处理目的）

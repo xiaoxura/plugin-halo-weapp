@@ -32,6 +32,7 @@ public class ConfigEndpoint implements CustomEndpoint {
                 request -> {
                     String requestId = ErrorHandler.newRequestId();
                     return Mono.fromCallable(() -> PublicConfig.from(
+                            settingsService.site(),
                             settingsService.comment(),
                             settingsService.announcement(),
                             settingsService.client()))
