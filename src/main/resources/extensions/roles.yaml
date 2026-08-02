@@ -13,7 +13,8 @@ metadata:
 rules:
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["config"]
-    verbs: ["get"]
+    # Halo 将无名称的 GET 自定义端点按 list 授权；同时保留 get 兼容已命名读取语义。
+    verbs: ["get", "list"]
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["session"]
     verbs: ["create"]
@@ -22,7 +23,7 @@ rules:
     verbs: ["create"]
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["auth/profile"]
-    verbs: ["get", "patch"]
+    verbs: ["get", "list", "patch"]
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["auth/session", "auth/account"]
     verbs: ["delete"]

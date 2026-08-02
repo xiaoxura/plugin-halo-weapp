@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import run.halo.app.extension.ConfigMap;
@@ -38,6 +39,7 @@ public class IdentityKeyService {
     private final AtomicReference<byte[]> cachedKey = new AtomicReference<>();
     private final AtomicReference<Mono<byte[]>> inFlight = new AtomicReference<>();
 
+    @Autowired
     public IdentityKeyService(ReactiveExtensionClient extensionClient,
                               PluginContext pluginContext) {
         this(extensionClient, pluginContext.getName() + CONFIG_MAP_SUFFIX,

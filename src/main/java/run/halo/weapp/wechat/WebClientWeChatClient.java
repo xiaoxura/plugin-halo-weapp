@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -43,6 +44,7 @@ public class WebClientWeChatClient implements WeChatClient {
     private final AtomicReference<CachedToken> tokenCache = new AtomicReference<>();
     private final AtomicReference<Mono<String>> tokenInFlight = new AtomicReference<>();
 
+    @Autowired
     public WebClientWeChatClient(SettingsService settings, MaskUtils maskUtils) {
         this(WebClient.builder().baseUrl(BASE_URL).build(), settings, maskUtils);
     }
