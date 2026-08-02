@@ -14,7 +14,7 @@ class MaskUtilsTest {
     @Test
     void userTagNeverContainsOpenIdAndIsStableForSameSalt() {
         MaskUtils mask = new MaskUtils("fixed-test-salt-0123456789abcdef".getBytes());
-        String openId = "oABCDEFG_real_openid_value_12345";
+        String openId = "oTESTONLY_openid_placeholder_123";
         String tag1 = mask.userTag(openId);
         String tag2 = mask.userTag(openId);
         assertEquals(tag1, tag2);

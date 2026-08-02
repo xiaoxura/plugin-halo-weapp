@@ -11,7 +11,7 @@ import run.halo.weapp.security.SessionService;
 /**
  * HaloWeApp 微信小程序配套插件主类。
  *
- * <p>能力：公开配置下发（/config）、微信登录短会话（/session）、
+ * <p>能力：公开配置下发（/config）、匿名评论短会话（/session）、微信读者身份（/auth/*）、
  * 安全评论与回复写入（/comments、/comments/{name}/replies）。
  * 所有写能力默认关闭，依赖实时配置与微信内容安全检测，详见 docs/。</p>
  */

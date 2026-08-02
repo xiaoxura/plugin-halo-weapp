@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import run.halo.app.extension.ConfigMap;
@@ -36,6 +38,7 @@ class IdentityKeyServiceTest {
     @BeforeEach
     void setUp() {
         client = mock(ReactiveExtensionClient.class);
+        when(client.list(eq(WeAppUser.class), any(), any())).thenReturn(Flux.empty());
     }
 
     @Test
@@ -88,6 +91,35 @@ class IdentityKeyServiceTest {
         IdentityKeyService service = service();
 
         StepVerifier.create(service.getOrCreate())
+            .expectErrorSatisfies(error -> {
+                assertTrue(error instanceof ApiException);
+                assertEquals(ErrorCode.HALO_UNAVAILABLE, ((ApiException) error).code());
+            })
+            .verify();
+        verify(client, never()).update(any(ConfigMap.class));
+    }
+
+    @Test
+    void missingOrEmptyKeyFailsClosedWhenReadersAlreadyExist() {
+        WeAppUser existingReader = new WeAppUser();
+        Metadata readerMetadata = new Metadata();
+        readerMetadata.setName("reader-existing");
+        existingReader.setMetadata(readerMetadata);
+        when(client.list(eq(WeAppUser.class), any(), any()))
+            .thenReturn(Flux.just(existingReader));
+
+        when(client.fetch(ConfigMap.class, CONFIG_MAP_NAME)).thenReturn(Mono.empty());
+        StepVerifier.create(service().getOrCreate())
+            .expectErrorSatisfies(error -> {
+                assertTrue(error instanceof ApiException);
+                assertEquals(ErrorCode.HALO_UNAVAILABLE, ((ApiException) error).code());
+            })
+            .verify();
+        verify(client, never()).create(any(ConfigMap.class));
+
+        ConfigMap emptyConfigMap = configMap(Map.of());
+        when(client.fetch(ConfigMap.class, CONFIG_MAP_NAME)).thenReturn(Mono.just(emptyConfigMap));
+        StepVerifier.create(service().getOrCreate())
             .expectErrorSatisfies(error -> {
                 assertTrue(error instanceof ApiException);
                 assertEquals(ErrorCode.HALO_UNAVAILABLE, ((ApiException) error).code());

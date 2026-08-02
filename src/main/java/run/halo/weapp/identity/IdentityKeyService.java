@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 import run.halo.app.extension.ConfigMap;
@@ -88,9 +89,21 @@ public class IdentityKeyService {
                 if (existing.isPresent()) {
                     return Mono.just(existing.get());
                 }
-                return initializeExisting(configMap, randomKey(), 0);
+                return initializeWhenNoReaders(
+                    () -> initializeExisting(configMap, randomKey(), 0));
             })
-            .switchIfEmpty(Mono.defer(() -> createConfigMap(randomKey())));
+            .switchIfEmpty(Mono.defer(() -> initializeWhenNoReaders(
+                () -> createConfigMap(randomKey()))));
+    }
+
+    /**
+     * identity ConfigMap 缺失或没有 key 只可能在首个读者创建前自动初始化。
+     * 已有读者时继续生成新 key 会让全部确定性资源永久不可定位，因此必须失败关闭并等待恢复备份。
+     */
+    private Mono<byte[]> initializeWhenNoReaders(Supplier<Mono<byte[]>> initializer) {
+        return extensionClient.list(WeAppUser.class, ignored -> true, (left, right) -> 0)
+            .hasElements()
+            .flatMap(hasReaders -> hasReaders ? Mono.error(unavailable()) : initializer.get());
     }
 
     private Mono<byte[]> createConfigMap(byte[] key) {

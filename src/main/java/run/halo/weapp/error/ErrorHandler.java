@@ -34,8 +34,10 @@ public final class ErrorHandler {
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(ErrorResponse.of(apiException, requestId));
         }
-        // 未知异常：记录内部细节但对外只返回通用结构
-        log.error("[weapp] requestId={} unexpected error", requestId, t);
+        // 未知异常同样不记录 message/stacktrace：框架解码异常可能携带请求体、header 或上游 URI。
+        // requestId + 异常类型足以聚合告警，深入排查应在受控环境复现，不能以泄露用户数据换诊断。
+        log.error("[weapp] requestId={} unexpected error type={}", requestId,
+            t == null ? "unknown" : t.getClass().getSimpleName());
         var body = new ErrorResponse(ErrorCode.HALO_UNAVAILABLE.name(),
             "服务暂时不可用，请稍后重试", requestId, null);
         return ServerResponse.status(500)
