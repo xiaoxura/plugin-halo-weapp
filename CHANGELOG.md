@@ -4,8 +4,8 @@
 
 ## [未发布]
 
-目标版本：plugin-halo-weapp v0.2.0，配套 HaloWeApp v0.4.0。当前为 RC 开发分支；生产暗部署、
-双 Halo 运行时/双真机和回滚演练完成前不创建 v0.2.0 tag。
+目标版本：plugin-halo-weapp v0.2.0，配套 HaloWeApp v0.4.0。当前为 RC 开发分支；目标环境暗部署、
+双真机、真实微信和恢复/回滚演练完成前不创建 v0.2.0 tag。
 
 ### 新增
 
@@ -54,9 +54,9 @@
 - 100 项 Java 自动化测试在 Halo plugin API platform 2.23.0 与 2.25.0 均通过
 - `./gradlew clean build -PhaloApiVersion=2.23.0` 作为最终兼容产物门禁；OpenAPI 重复键、
   资源默认开关和敏感值扫描纳入 RC 清单
-- Halo 2.25.4 隔离运行时已验证 Setting/ConfigMap 初始化、插件冷启动、公开配置和全部匿名
-  auth/评论路由；实际微信、生产数据和双真机证据仍不由该本机验证替代
-- 编译/Mock 测试不能替代 Halo 2.23.x / 2.25.4 实际部署、真实微信登录、identityKey 恢复和
+- Halo 2.23.3 与 2.25.4 隔离 H2 运行时均已验证 Setting/ConfigMap 初始化、插件冷启动、公开
+  配置和全部匿名 auth/评论路由；两端还完成 Moment 1.15.0 → 1.16.1 启停、升级和数据保留冒烟
+- 编译/Mock 与本机 H2 测试不能替代目标环境暗部署、真实微信登录、identityKey 恢复、双真机和
   v0.1.0 回滚演练；这些证据完成前保持未发布
 
 ## [0.1.0] - 2026-08-02

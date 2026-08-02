@@ -51,8 +51,9 @@ v0.2.0 不实现 Moment 评论写入。`momentCommentEnabled` 仅为 v0.4.1 预�
 | Moment | 可选；`PluginMoments >= 1.15.0`，推荐 v1.16.1 |
 
 CI 会分别用 Halo plugin API platform 2.23.0 和 2.25.0 编译并运行测试；RC 已在隔离的
-Halo 2.25.4 运行时完成插件冷启动和匿名 API 冒烟。编译/本机运行测试都不等于真实微信、生产
-数据或双真机证据，发布前仍须按 [deployment.md](docs/deployment.md) 完成目标环境矩阵。
+Halo 2.23.3 与 2.25.4 H2 运行时完成插件冷启动、匿名 API 和 Moment 1.15/1.16 启停升级冒烟。
+编译/本机运行测试都不等于真实微信、生产数据或双真机证据，发布前仍须按
+[deployment.md](docs/deployment.md) 完成目标环境矩阵。
 
 ## 安装与初始配置
 
