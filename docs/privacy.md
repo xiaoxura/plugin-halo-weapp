@@ -39,7 +39,7 @@
 | OpenID | 请求和 90 分钟内存会话 | 频控、临时评论会话或 HMAC 派生；不落盘 |
 | session_key | code2Session 解析期间立即丢弃 | v0.4.0 不使用，不进入会话 |
 | access token | 插件内存缓存 | 调用微信内容安全 API |
-| identityKey | 独立内部 `plugin-halo-weapp-identity` ConfigMap | HMAC 派生确定性读者资源名；加密备份 |
+| identityKey | 独立内部 Opaque Secret `plugin-halo-weapp-identity` 的二进制 data | HMAC 派生确定性读者资源名；加密备份 |
 | `WeAppUser.spec` | Halo 扩展资源 | 仅昵称与隐私版本，保存到用户注销或运营者依法清理 |
 | 内部资源名 | `reader-` + HMAC 摘要 160-bit 前缀 | 幂等定位读者；不聚合 anonymous、不返回客户端 |
 | 账号/临时 token | 插件进程内存，默认 5400 秒 | auth 和评论请求认证；插件重启失效 |
@@ -47,7 +47,8 @@
 | 安全/频控状态 | 插件短期内存 | 限流、幂等和内容安全，随 TTL/重启清理 |
 
 原始 OpenID、session_key、token、identityKey 和完整摘要不得进入 WeAppUser、Halo Comment、公开
-config、auth profile、错误响应、应用日志或测试夹具。
+config、auth profile、错误响应、插件业务日志或测试夹具。Halo core 扩展索引日志可能显示
+`WeAppUser.metadata.name` 的 HMAC 160-bit 截断名；它不含原始 OpenID，但仍按可关联标识保护。
 
 ## 3. 处理时机与用户操作
 
@@ -124,8 +125,11 @@ config、auth profile、错误响应、应用日志或测试夹具。
 - Setting、identityKey、WeAppUser 与评论备份应加密、最小授权、记录保留期和销毁；
 - identityKey 与 WeAppUser 必须同一时点备份/恢复。key 丢失时关闭 readerAccount 并恢复备份，
   不得静默生成新 key；
-- 日志不得记录请求 auth header/body、OpenID、AppSecret、access token、session_key、token、
-  identityKey 或 readerName；诊断只使用允许字段和不可逆短标签；
+- 插件日志不得记录请求 auth header/body、OpenID、AppSecret、access token、session_key、token、
+  identityKey 或 readerName；诊断只使用允许字段和不可逆短标签；Halo core 日志可能包含 HMAC
+  资源名，运营者须限制日志访问、传输与保留期；
+- 早期 RC ConfigMap 必须由当前插件先原值迁移到 Secret 并清除 key，不得直接删除仍含 key 的
+  ConfigMap；Halo 2.23.3 的 ConfigMap 删除审计会输出完整 data；
 - AppSecret 泄露时立即在微信公众平台重置；identityKey 泄露不能直接轮换，需关闭登录并执行
   显式迁移；
 - 具体备份与事故步骤见 [deployment.md](deployment.md)。

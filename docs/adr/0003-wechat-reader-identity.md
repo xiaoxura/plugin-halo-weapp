@@ -2,6 +2,7 @@
 
 - 状态：已接受（M1）
 - 日期：2026-08-02
+- 修订：2026-08-02，identityKey 从早期 RC ConfigMap 改为 Opaque Secret（Halo 删除日志安全）
 
 ## 背景
 
@@ -21,17 +22,20 @@ v0.4.0 需要让用户主动建立可感知的“微信读者”身份，同时�
 
 ### 确定性身份与密钥
 
-- 首次需要读者身份时生成 32 字节 `SecureRandom` identityKey，以 Base64 编码存入独立的插件
-  内部 ConfigMap `plugin-halo-weapp-identity` 的 `identityKey` 数据项。该 ConfigMap 与 Setting
-  使用的 `plugin-halo-weapp-configmap` 隔离，避免 Halo 保存或重置插件设置时覆盖密钥；
+- 首次需要读者身份时生成 32 字节 `SecureRandom` identityKey，存入独立的插件内部 Opaque
+  Secret `plugin-halo-weapp-identity` 的二进制 `data.identityKey`。API JSON 会按 Secret 约定
+  表示为 Base64；禁止使用会在 Halo 扩展删除日志中打印明文 data 的 ConfigMap；
+- Secret 与 Setting 使用的 `plugin-halo-weapp-configmap` 隔离，避免保存或重置设置覆盖密钥；
 - identityKey 不进入 Setting 表单、公开 DTO、日志、错误、jar 资源或测试快照；
-- ConfigMap 缺失或没有 key 时，只有在系统中不存在任何 WeAppUser 才允许按“首次使用”初始化；
+- Secret 缺失或没有 key 时，只有在系统中不存在任何 WeAppUser 才允许按“首次使用”初始化；
   若已有读者资源则返回 `HALO_UNAVAILABLE` 并等待恢复备份，禁止生成新 key 割裂旧账号；
+- 早期 v0.2.0 RC 的同名 ConfigMap 在启动时迁移：先原值写入/核对 Secret，再清除旧 key；
+  两端冲突、非法长度或非法 Base64 均阻止启动，不能静默选择；
 - 身份摘要固定为 `HMAC-SHA256(identityKey, appId + ":" + openId)`；AppID 参与输入，切换
   AppID 不会复用旧身份；
 - `WeAppUser.metadata.name` 为 `reader-` 加摘要的稳定 160-bit 十六进制前缀。名称只用于插件
   内部资源定位，不通过 Public API 返回；
-- identityKey 必须随独立 ConfigMap 加密备份。丢失后无法从资源名反推 OpenID，轮换必须通过
+- identityKey 必须随独立 Secret 加密备份。丢失后无法从资源名反推 OpenID，轮换必须通过
   显式迁移完成，禁止静默重置后宣称旧账号仍可恢复。
 
 ### 持久资源
@@ -50,6 +54,8 @@ spec:
 - 首次并发登录使用确定性名称：先 fetch，缺失则 create；create 冲突后再次 fetch，确保同一
   OpenID 最终只产生一个资源；
 - spec 不保存 OpenID、完整摘要、AppID、token、微信头像、手机号、邮箱或网站；
+- metadata.name 是 HMAC 截断名；不进入小程序或插件业务日志，但 Halo core 扩展索引日志可能
+  显示资源名，因此平台日志仍按可关联标识限制访问与保留期；
 - 注销删除 `WeAppUser` 并撤销关联的全部内存会话。既有公开 Halo 评论不自动删除，客户端
   二次确认与隐私政策必须明确说明。
 
@@ -77,4 +83,6 @@ spec:
 - 插件停用、开关关闭、identityKey 损坏/丢失且已有读者或微信不可用时身份能力 fail-closed，
   公开阅读不受影响；
 - identityKey 成为必须备份的高价值服务端资产，运维文档必须覆盖备份、恢复与轮换约束；
+- Secret.data 的 `toString` 只显示 byte[] 对象引用，规避 Halo 2.23.3 `GcReconciler` 删除
+  ConfigMap 时序列化完整 data 的实测泄露路径；
 - 微信读者与 Halo User 保持严格隔离，未来若需要作者发布能力必须另立 UC 授权 ADR。

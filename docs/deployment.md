@@ -45,7 +45,7 @@ v0.1.1 候选 jar（`cfaa16f`）为 117572 bytes，SHA-256
 | 资源 | 作用 | 敏感性/恢复约束 |
 | --- | --- | --- |
 | `plugin-halo-weapp-configmap` | Setting 数据；含 AppID、AppSecret 密文、站点/评论/版本/隐私开关 | 敏感；限制读取权限 |
-| `plugin-halo-weapp-identity` | 仅含 Base64 编码的 32 字节 `identityKey` | 高敏感；必须加密备份且原样恢复 |
+| Opaque Secret `plugin-halo-weapp-identity` | `data.identityKey` 为 32 字节；API 定向导出时呈 Base64 | 高敏感；必须加密备份且原样恢复 |
 | `weapp.halo.run/v1alpha1` `WeAppUser` | 昵称、隐私版本及 HMAC 派生内部名称 | 与同一时点 identityKey 配套恢复 |
 | Halo Comment/Reply | 已公开的文章评论与回复 | 注销读者账号不会自动删除 |
 
@@ -70,13 +70,13 @@ mkdir -p halo-weapp-backup
 
 curl --fail-with-body --silent --show-error \
   -H "Authorization: Bearer ${HALO_PAT}" \
-  "${HALO_URL}/apis/v1alpha1/configmaps/plugin-halo-weapp-configmap" \
+  "${HALO_URL}/api/v1alpha1/configmaps/plugin-halo-weapp-configmap" \
   > halo-weapp-backup/plugin-halo-weapp-configmap.json
 
 curl --fail-with-body --silent --show-error \
   -H "Authorization: Bearer ${HALO_PAT}" \
-  "${HALO_URL}/apis/v1alpha1/configmaps/plugin-halo-weapp-identity" \
-  > halo-weapp-backup/plugin-halo-weapp-identity.json
+  "${HALO_URL}/api/v1alpha1/secrets/plugin-halo-weapp-identity" \
+  > halo-weapp-backup/plugin-halo-weapp-identity-secret.json
 
 curl --fail-with-body --silent --show-error \
   -H "Authorization: Bearer ${HALO_PAT}" \
@@ -92,7 +92,7 @@ unset HALO_PAT
 ```bash
 python3 - <<'PY'
 import base64, hashlib, json
-with open('halo-weapp-backup/plugin-halo-weapp-identity.json', encoding='utf-8') as f:
+with open('halo-weapp-backup/plugin-halo-weapp-identity-secret.json', encoding='utf-8') as f:
     encoded = json.load(f)['data']['identityKey']
 key = base64.b64decode(encoded, validate=True)
 if len(key) != 32:
@@ -103,6 +103,23 @@ PY
 
 将指纹、备份时间、Halo/插件版本、WeAppUser 数量和整站备份校验和写入受控运维记录；不要记录
 identityKey 原文。
+
+### 2.2 早期 v0.2.0 RC 的 ConfigMap 迁移
+
+早期 RC 曾把同一 key 以 Base64 放在同名 ConfigMap。Halo 2.23.3 实测在删除 ConfigMap 时会由
+`GcReconciler` 以 INFO 输出完整 `data`，因此该格式不再安全。当前实现改用 `Secret.data`：Halo
+删除审计只会显示 Java byte[] 对象引用，不会显示 key。
+
+升级当前 v0.2.0 RC 时，插件在进入 `STARTED` 前执行一次安全迁移：
+
+1. 读取并验证同名旧 ConfigMap 的 32 字节 key；
+2. 原值创建/核对 Opaque Secret；
+3. 仅在两端 key 完全相同时清除旧 ConfigMap 的 `identityKey`，保留其他未知字段；
+4. key 损坏或两端冲突时阻止插件启动，不选择任一方、不生成新 key。
+
+迁移前必须先做完整备份，且**不得手工删除仍含 key 的旧 ConfigMap**。升级后先核对 Secret 指纹，
+再确认旧 ConfigMap 已不含 `identityKey`；空 ConfigMap 可保留为迁移痕迹。没有旧 key 的全新站点
+不会因插件启动而预生成 Secret，仍只在首次实际身份请求时按需创建。
 
 ## 3. 构建与产物核验
 
@@ -133,7 +150,7 @@ v0.1.0 不得继续运行或用于升级验证；尚在该版本的站点应直�
 需要保留可执行回滚路径时，必须先完成 v0.1.1 正式维护发布及其产物哈希核对。
 
 1. 在 v0.1.1 Setting 中关闭评论提交/回复；记录公开 config 并完成旧客户端冒烟测试。
-2. 执行第 2 节完整备份。v0.1.x 尚无 identity ConfigMap/WeAppUser 属正常情况。
+2. 执行第 2 节完整备份。v0.1.x 尚无 identity Secret/WeAppUser 属正常情况。
 3. 安装 v0.2.0 jar 并启用；不要删除或重建 Setting ConfigMap。
 4. 打开设置并确认新增开关均保持默认关闭：
    - `momentsEnabled=false`；
@@ -147,7 +164,7 @@ v0.1.0 不得继续运行或用于升级验证；尚在该版本的站点应直�
    `302 Location: /login` 都表示匿名 RBAC 未按 Halo 的资源语义生效，必须停止部署。
 7. 使用旧 HaloWeApp v0.3.0 回归配置、匿名 `/session` 和文章评论；此时不得开放新功能。
 
-v0.2.0 的 identity ConfigMap 仅在首次实际使用读者身份时按需生成。第一次小范围测试账号登录
+v0.2.0 的 identity Secret 仅在首次实际使用读者身份时按需生成。第一次小范围测试账号登录
 成功后，应立即重新执行完整备份并记录 identityKey 指纹；在该备份完成前不得扩大 readerAccount。
 
 ## 5. 分阶段上线
@@ -197,7 +214,7 @@ v0.2.0 的 identity ConfigMap 仅在首次实际使用读者身份时按需生�
 恢复必须在隔离或维护窗口执行，readerAccount 和评论写入保持关闭：
 
 1. 记录事故前 Halo、插件、小程序、Moment 版本和当前 AppID；
-2. 使用 Halo 官方恢复流程恢复同一备份点的 Setting ConfigMap、identity ConfigMap、
+2. 使用 Halo 官方恢复流程恢复同一备份点的 Setting ConfigMap、identity Secret、
    WeAppUser 和评论数据；禁止只恢复其中一部分；
 3. 在启用登录前使用第 2.1 节脚本核对 identityKey 为 32 字节且 SHA-256 与备份记录一致；
 4. 确认 AppID 与生成这些 WeAppUser 时一致；AppSecret 可轮换，但 AppID 变更需要独立迁移；
@@ -206,11 +223,11 @@ v0.2.0 的 identity ConfigMap 仅在首次实际使用读者身份时按需生�
 7. 验证退出后旧 token 401、注销后资源不存在且全部 token 失效；
 8. 重新关闭 readerAccount，检查日志与资源后记录演练结果，再决定恢复灰度。
 
-若 WeAppUser 存在但 identity ConfigMap 缺失/为空，预期行为是 `HALO_UNAVAILABLE`。此时：
+若 WeAppUser 存在但 identity Secret 缺失/为空，预期行为是 `HALO_UNAVAILABLE`。此时：
 
 - 立即保持 readerAccount 关闭；
 - 不删除 WeAppUser，不保存/重置设置来“碰碰运气”，不创建新 key；
-- 从可信备份原样恢复 identity ConfigMap并核对指纹；
+- 从可信备份原样恢复 identity Secret 并核对指纹；
 - 无可信 key 备份时升级为数据恢复事故，不能宣称旧账号可恢复。
 
 ## 7. 回滚
@@ -234,10 +251,10 @@ v0.2.0 的 identity ConfigMap 仅在首次实际使用读者身份时按需生�
 4. 安装已核验 SHA-256 的 v0.1.1 jar；确认插件 `STARTED`、Setting 重建、ConfigMap 哈希不变，
    匿名 `/config` 返回 200 JSON，`/session` 与文章评论路由进入业务错误而非 `/login`；
 5. v0.1.1 Setting 中的 `features` 组仅用于保留 v0.2.0 ConfigMap 数据，在该版本完全不生效；
-   **保留** `plugin-halo-weapp-identity` 和 WeAppUser，不在紧急回滚时清理读者资料；
+   **保留** `plugin-halo-weapp-identity` Secret 和 WeAppUser，不在紧急回滚时清理读者资料；
 6. 发布/回退 HaloWeApp v0.3.0；验证 config、session、文章读取和评论；
 7. 恢复 v0.2.0 时先恢复配套 identity/WeAppUser，再按第 6 节演练；等待 Setting schema
-   协调完成，并再次核对 ConfigMap、identityKey 指纹、匿名路由和已有账号。
+   协调完成，并再次核对 Setting ConfigMap、identity Secret 指纹、匿名路由和已有账号。
 
 v0.4.0 客户端在 v0.1.1 插件下会安全关闭账号和 Moment 新能力，但正式回滚应同时恢复
 v0.3.0，以获得已验收且可定位的完整组合。
@@ -246,8 +263,10 @@ v0.3.0，以获得已验收且可定位的完整组合。
 
 - AppSecret 泄露：立即在微信公众平台重置并更新插件设置，撤销受影响访问；
 - identityKey 泄露：关闭 readerAccount、保护备份并启动显式迁移设计；不能直接换 key；
-- 日志只允许 requestId、微信脱敏诊断字段和不可逆短标签，不得记录请求 header/body、OpenID、
-  token、AppSecret、access token、session_key、identityKey 或 readerName；
+- 插件业务日志只允许 requestId、微信脱敏诊断字段和不可逆短标签，不得记录请求 header/body、
+  OpenID、token、AppSecret、access token、session_key、identityKey 或 readerName；Halo core 在
+  扩展索引日志中可能显示 HMAC 截断的 `WeAppUser.metadata.name`，日志仍须按可关联标识限制访问
+  和保留期，但其中不含原始 OpenID；
 - 备份文件权限至少 0600，加密传输/静态保存，限定保管人和保留期，销毁需可审计；
 - 注销删除 WeAppUser 与账号会话，但不自动删除公开评论；数据主体请求按
   [隐私实施指南](privacy.md) 和站点政策处理；
@@ -260,7 +279,9 @@ v0.3.0，以获得已验收且可定位的完整组合。
   ConfigMap/Moment 保留且 Setting/匿名路由恢复；
 - [ ] v0.1.1 最终提交、CI、tag、GitHub Release jar 和 SHA-256 一致；
 - [ ] Moment 1.15.x / 1.16.1 与 iOS/Android 媒体矩阵完成；
-- [ ] 两个 ConfigMap + 全部 WeAppUser + 评论的备份和恢复演练完成；
+- [x] 本机 H2 使用 Setting ConfigMap + identity Secret + 合成 WeAppUser 完成完整目录备份/独立
+  恢复、缺 Secret 不轮换及 v0.1.1 往返，且 Secret 生命周期日志无 key；
+- [ ] 目标环境 Setting ConfigMap + identity Secret + 全部真实 WeAppUser + 评论的备份和恢复演练完成；
 - [ ] identityKey 长度/指纹一致，已有账号无昵称恢复成功；
 - [ ] 目标环境使用 v0.3.0 + v0.1.1 回滚路径实际执行成功；
 - [ ] 新 feature 初始均 false，公开 config/日志/错误敏感值扫描通过；

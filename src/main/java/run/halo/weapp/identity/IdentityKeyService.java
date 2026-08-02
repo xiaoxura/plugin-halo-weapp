@@ -1,5 +1,6 @@
 package run.halo.weapp.identity;
 
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HashMap;
@@ -13,6 +14,7 @@ import reactor.core.publisher.Mono;
 import run.halo.app.extension.ConfigMap;
 import run.halo.app.extension.Metadata;
 import run.halo.app.extension.ReactiveExtensionClient;
+import run.halo.app.extension.Secret;
 import run.halo.app.plugin.PluginContext;
 import run.halo.weapp.error.ApiException;
 import run.halo.weapp.error.ErrorCode;
@@ -20,8 +22,13 @@ import run.halo.weapp.error.ErrorCode;
 /**
  * 插件身份 HMAC 密钥管理。
  *
- * <p>首次需要时生成 32 字节 SecureRandom，并以 Base64 写入插件内部 ConfigMap 的
- * {@code identityKey} 数据项。已存在但损坏的 key 一律失败关闭，绝不静默轮换。</p>
+ * <p>首次需要时生成 32 字节 SecureRandom，并写入插件内部 Opaque Secret 的
+ * {@code identityKey} 数据项。使用 Secret.data 而非 ConfigMap，避免 Halo 在扩展删除日志中
+ * 序列化明文。已存在但损坏的 key 一律失败关闭，绝不静默轮换。</p>
+ *
+ * <p>早期 v0.2.0 RC 曾把 Base64 key 写入同名 ConfigMap。发现 Halo 2.23.3 的删除日志会输出
+ * ConfigMap.data 后，本服务会原值迁移到 Secret，并在校验两端一致后清除旧 ConfigMap 中的
+ * identityKey；未知或冲突状态一律失败关闭。</p>
  */
 @Component
 public class IdentityKeyService {
@@ -29,11 +36,11 @@ public class IdentityKeyService {
     static final String DATA_KEY = "identityKey";
     static final int KEY_BYTES = 32;
     static final String PLUGIN_NAME_LABEL = "plugin.halo.run/plugin-name";
-    private static final String CONFIG_MAP_SUFFIX = "-identity";
+    private static final String RESOURCE_SUFFIX = "-identity";
     private static final int UPDATE_ATTEMPTS = 3;
 
     private final ReactiveExtensionClient extensionClient;
-    private final String configMapName;
+    private final String resourceName;
     private final String pluginName;
     private final SecureRandom secureRandom;
     private final AtomicReference<byte[]> cachedKey = new AtomicReference<>();
@@ -42,15 +49,15 @@ public class IdentityKeyService {
     @Autowired
     public IdentityKeyService(ReactiveExtensionClient extensionClient,
                               PluginContext pluginContext) {
-        this(extensionClient, pluginContext.getName() + CONFIG_MAP_SUFFIX,
+        this(extensionClient, pluginContext.getName() + RESOURCE_SUFFIX,
             pluginContext.getName(), new SecureRandom());
     }
 
-    /** 测试可见：注入 ConfigMap 名称、插件名和随机源。 */
-    IdentityKeyService(ReactiveExtensionClient extensionClient, String configMapName,
+    /** 测试可见：注入 Secret/旧 ConfigMap 名称、插件名和随机源。 */
+    IdentityKeyService(ReactiveExtensionClient extensionClient, String resourceName,
                        String pluginName, SecureRandom secureRandom) {
         this.extensionClient = extensionClient;
-        this.configMapName = configMapName;
+        this.resourceName = resourceName;
         this.pluginName = pluginName;
         this.secureRandom = secureRandom;
     }
@@ -84,22 +91,60 @@ public class IdentityKeyService {
         });
     }
 
+    /**
+     * 插件启动时只迁移已经存在的早期 RC ConfigMap，不在尚未使用读者身份的站点预生成 key。
+     * 迁移必须在插件进入 STARTED 前完成，避免旧 ConfigMap 在运维删除时被 Halo 明文写入日志。
+     */
+    public Mono<Void> migrateLegacyIfPresent() {
+        return fetchLegacyKey()
+            .flatMap(legacyKey -> extensionClient.fetch(Secret.class, resourceName)
+                .flatMap(secret -> readSecretKey(secret)
+                    .map(existing -> Mono.just(existing)
+                        .flatMap(this::scrubMatchingLegacyKey))
+                    .orElseGet(() -> initializeExistingSecret(secret, legacyKey, 0)
+                        .flatMap(this::scrubMatchingLegacyKey)))
+                .switchIfEmpty(Mono.defer(() -> createSecret(legacyKey)
+                    .flatMap(this::scrubMatchingLegacyKey))))
+            .then()
+            .onErrorMap(t -> !(t instanceof ApiException), t -> unavailable());
+    }
+
     private Mono<byte[]> loadOrCreate() {
-        return extensionClient.fetch(ConfigMap.class, configMapName)
-            .flatMap(configMap -> {
-                Optional<byte[]> existing = readKey(configMap);
-                if (existing.isPresent()) {
-                    return Mono.just(existing.get());
-                }
-                return initializeWhenNoReaders(
-                    () -> initializeExisting(configMap, randomKey(), 0));
-            })
+        return extensionClient.fetch(Secret.class, resourceName)
+            .flatMap(this::loadExistingSecret)
+            .switchIfEmpty(Mono.defer(this::migrateLegacyOrCreate));
+    }
+
+    private Mono<byte[]> loadExistingSecret(Secret secret) {
+        Optional<byte[]> existing = readSecretKey(secret);
+        if (existing.isPresent()) {
+            return scrubMatchingLegacyKey(existing.get());
+        }
+        // 允许从完整的旧 RC ConfigMap 恢复一个空 Secret；没有旧 key 时仍遵守“已有读者禁止
+        // 生成新 key”的不变量。
+        return fetchLegacyKey()
+            .flatMap(key -> initializeExistingSecret(secret, key, 0)
+                .flatMap(this::scrubMatchingLegacyKey))
             .switchIfEmpty(Mono.defer(() -> initializeWhenNoReaders(
-                () -> createConfigMap(randomKey()))));
+                () -> initializeExistingSecret(secret, randomKey(), 0))));
+    }
+
+    private Mono<byte[]> migrateLegacyOrCreate() {
+        return fetchLegacyKey()
+            .flatMap(key -> createSecret(key).flatMap(this::scrubMatchingLegacyKey))
+            .switchIfEmpty(Mono.defer(() -> initializeWhenNoReaders(
+                () -> createSecret(randomKey()))));
+    }
+
+    private Mono<byte[]> fetchLegacyKey() {
+        return extensionClient.fetch(ConfigMap.class, resourceName)
+            .flatMap(configMap -> readLegacyKey(configMap)
+                .map(Mono::just)
+                .orElseGet(Mono::empty));
     }
 
     /**
-     * identity ConfigMap 缺失或没有 key 只可能在首个读者创建前自动初始化。
+     * Secret/旧 ConfigMap 缺失或没有 key 只可能在首个读者创建前自动初始化。
      * 已有读者时继续生成新 key 会让全部确定性资源永久不可定位，因此必须失败关闭并等待恢复备份。
      */
     private Mono<byte[]> initializeWhenNoReaders(Supplier<Mono<byte[]>> initializer) {
@@ -108,45 +153,100 @@ public class IdentityKeyService {
             .flatMap(hasReaders -> hasReaders ? Mono.error(unavailable()) : initializer.get());
     }
 
-    private Mono<byte[]> createConfigMap(byte[] key) {
-        ConfigMap configMap = new ConfigMap();
+    private Mono<byte[]> createSecret(byte[] key) {
+        Secret secret = new Secret();
         Metadata metadata = new Metadata();
-        metadata.setName(configMapName);
+        metadata.setName(resourceName);
         metadata.setLabels(Map.of(PLUGIN_NAME_LABEL, pluginName));
-        configMap.setMetadata(metadata);
-        configMap.setData(Map.of(DATA_KEY, encode(key)));
-        return extensionClient.create(configMap)
+        secret.setMetadata(metadata);
+        secret.setType(Secret.SECRET_TYPE_OPAQUE);
+        secret.setData(Map.of(DATA_KEY, key.clone()));
+        return extensionClient.create(secret)
             .thenReturn(key)
-            .onErrorResume(createError -> extensionClient.fetch(ConfigMap.class, configMapName)
-                .flatMap(existing -> readKey(existing)
+            .onErrorResume(createError -> extensionClient.fetch(Secret.class, resourceName)
+                .flatMap(existing -> readSecretKey(existing)
                     .map(Mono::just)
-                    .orElseGet(() -> initializeExisting(existing, key, 0)))
+                    .orElseGet(() -> initializeExistingSecret(existing, key, 0)))
                 .switchIfEmpty(Mono.error(createError)));
     }
 
-    private Mono<byte[]> initializeExisting(ConfigMap configMap, byte[] key, int attempt) {
-        Map<String, String> data = configMap.getData() == null
-            ? new HashMap<>() : new HashMap<>(configMap.getData());
-        data.put(DATA_KEY, encode(key));
-        configMap.setData(data);
-        return extensionClient.update(configMap)
+    private Mono<byte[]> initializeExistingSecret(Secret secret, byte[] key, int attempt) {
+        Map<String, byte[]> data = copySecretData(secret.getData());
+        data.put(DATA_KEY, key.clone());
+        secret.setData(data);
+        secret.setType(Secret.SECRET_TYPE_OPAQUE);
+        secret.setStringData(null);
+        return extensionClient.update(secret)
             .thenReturn(key)
-            .onErrorResume(updateError -> extensionClient.fetch(ConfigMap.class, configMapName)
+            .onErrorResume(updateError -> extensionClient.fetch(Secret.class, resourceName)
                 .flatMap(latest -> {
-                    Optional<byte[]> winner = readKey(latest);
+                    Optional<byte[]> winner = readSecretKey(latest);
                     if (winner.isPresent()) {
                         return Mono.just(winner.get());
                     }
                     if (attempt + 1 < UPDATE_ATTEMPTS) {
-                        return initializeExisting(latest, key, attempt + 1);
+                        return initializeExistingSecret(latest, key, attempt + 1);
                     }
                     return Mono.error(updateError);
                 })
                 .switchIfEmpty(Mono.error(updateError)));
     }
 
+    /**
+     * 迁移成功后清除旧 ConfigMap 的明文，保留其余未知数据。旧 key 与 Secret 不一致时不选择
+     * 任一方，以免静默切换身份命名空间。
+     */
+    private Mono<byte[]> scrubMatchingLegacyKey(byte[] authoritativeKey) {
+        return extensionClient.fetch(ConfigMap.class, resourceName)
+            .flatMap(legacy -> scrubLegacyKey(legacy, authoritativeKey, 0))
+            .thenReturn(authoritativeKey);
+    }
+
+    private Mono<Void> scrubLegacyKey(ConfigMap legacy, byte[] authoritativeKey, int attempt) {
+        Optional<byte[]> legacyKey = readLegacyKey(legacy);
+        if (legacyKey.isEmpty()) {
+            return Mono.empty();
+        }
+        if (!MessageDigest.isEqual(legacyKey.get(), authoritativeKey)) {
+            return Mono.error(unavailable());
+        }
+        Map<String, String> data = legacy.getData() == null
+            ? new HashMap<>() : new HashMap<>(legacy.getData());
+        data.remove(DATA_KEY);
+        legacy.setData(data);
+        return extensionClient.update(legacy)
+            .then()
+            .onErrorResume(updateError -> extensionClient.fetch(ConfigMap.class, resourceName)
+                .flatMap(latest -> {
+                    Optional<byte[]> latestKey = readLegacyKey(latest);
+                    if (latestKey.isEmpty()) {
+                        return Mono.empty();
+                    }
+                    if (!MessageDigest.isEqual(latestKey.get(), authoritativeKey)) {
+                        return Mono.error(unavailable());
+                    }
+                    if (attempt + 1 < UPDATE_ATTEMPTS) {
+                        return scrubLegacyKey(latest, authoritativeKey, attempt + 1);
+                    }
+                    return Mono.error(updateError);
+                })
+                .switchIfEmpty(Mono.empty()));
+    }
+
     /** 空值表示尚未初始化；非空但非法表示密钥损坏，禁止自动替换。 */
-    private static Optional<byte[]> readKey(ConfigMap configMap) {
+    private static Optional<byte[]> readSecretKey(Secret secret) {
+        if (secret.getData() == null) {
+            return Optional.empty();
+        }
+        byte[] key = secret.getData().get(DATA_KEY);
+        if (key == null || key.length == 0) {
+            return Optional.empty();
+        }
+        return Optional.of(validateKey(key));
+    }
+
+    /** 仅用于一次性迁移早期 RC 的 Base64 ConfigMap。 */
+    private static Optional<byte[]> readLegacyKey(ConfigMap configMap) {
         if (configMap.getData() == null) {
             return Optional.empty();
         }
@@ -155,24 +255,31 @@ public class IdentityKeyService {
             return Optional.empty();
         }
         try {
-            byte[] key = Base64.getDecoder().decode(encoded);
-            if (key.length != KEY_BYTES) {
-                throw unavailable();
-            }
-            return Optional.of(key);
+            return Optional.of(validateKey(Base64.getDecoder().decode(encoded)));
         } catch (IllegalArgumentException e) {
             throw unavailable();
         }
+    }
+
+    private static byte[] validateKey(byte[] key) {
+        if (key.length != KEY_BYTES) {
+            throw unavailable();
+        }
+        return key.clone();
+    }
+
+    private static Map<String, byte[]> copySecretData(Map<String, byte[]> source) {
+        Map<String, byte[]> copy = new HashMap<>();
+        if (source != null) {
+            source.forEach((name, value) -> copy.put(name, value == null ? null : value.clone()));
+        }
+        return copy;
     }
 
     private byte[] randomKey() {
         byte[] key = new byte[KEY_BYTES];
         secureRandom.nextBytes(key);
         return key;
-    }
-
-    private static String encode(byte[] key) {
-        return Base64.getEncoder().encodeToString(key);
     }
 
     private static ApiException unavailable() {

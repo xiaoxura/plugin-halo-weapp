@@ -28,10 +28,12 @@ v0.2.0 不实现 Moment 评论写入。`momentCommentEnabled` 仅为 v0.4.1 预�
   不返回客户端、不写日志；
 - `WeAppUser` 只保存 2～20 字昵称与隐私政策版本，内部名称来自
   `HMAC-SHA256(identityKey, appId + ":" + openId)` 的截断摘要；
-- 32 字节 identityKey 存在独立内部 ConfigMap `plugin-halo-weapp-identity`，不进入 Setting、
-  公开 DTO、日志或 jar；它必须与 WeAppUser 一起加密备份；
-- 若已有 WeAppUser 而 identity ConfigMap 缺失或为空，插件会**失败关闭**，不会静默生成新密钥
+- 32 字节 identityKey 存在独立内部 Opaque Secret `plugin-halo-weapp-identity` 的二进制
+  `data`，不进入 Setting、公开 DTO、插件日志或 jar；它必须与 WeAppUser 一起加密备份；
+- 若已有 WeAppUser 而 identity Secret 缺失或为空，插件会**失败关闭**，不会静默生成新密钥
   并割裂旧账号；
+- 早期 v0.2.0 RC 的同名 ConfigMap 会在插件启动时原值迁移为 Secret 并清除旧明文；这是因为
+  Halo 2.23.3 的扩展删除审计会序列化 ConfigMap.data，而 Secret.data 只记录 byte[] 引用；
 - 所有新开关默认关闭。插件/微信/Halo 上游不可用、隐私版本不一致或客户端版本过低时，登录和
   写入 fail-closed，公开阅读不受影响；
 - 插件不持有 Halo 管理员 PAT，也不伪造管理员身份。
@@ -73,7 +75,8 @@ Halo 2.23.3 与 2.25.4 H2 运行时完成插件冷启动、匿名 API 和 Moment
 5. 先验证公开 config 无内部身份字段、旧 v0.3.0 客户端无回归，再依次灰度 Moment 读取、
    微信读者登录和文章评论。
 
-首次开放读者登录前必须备份并核验两个 ConfigMap；升级/恢复顺序、identityKey 指纹校验和
+首次开放读者登录前必须备份并核验 Setting ConfigMap、identity Secret 与 WeAppUser；升级/恢复
+顺序、identityKey 指纹校验和
 v0.1.1 回滚方法见 [部署、升级、备份与回滚](docs/deployment.md)。已发布的 v0.1.0 tag
 不满足 Halo 生产资源发现、Spring 注入和匿名 config 授权要求，禁止作为回滚版本；维护候选及
 双 Halo 证据见 [`hotfix/v0.1.1` 的验证记录](https://github.com/xiaoxura/plugin-halo-weapp/blob/hotfix/v0.1.1/docs/release-validation-v0.1.1.md)。
@@ -95,9 +98,9 @@ iOS 与 Android 真机验证。
 ./gradlew haloServer -PhaloDevVersion=2.25.4
 ```
 
-v0.2.0 RC 当前有 100 项 Java 自动化测试，覆盖配置门禁、插件资源布局、Spring 构造器选择、
+v0.2.0 RC 当前有 106 项 Java 自动化测试，覆盖配置门禁、插件资源布局、Spring 构造器选择、
 匿名 RBAC、匿名/账号会话、内容安全、频控、幂等、读者身份 HMAC、并发首次创建、identityKey
-初始化/损坏/丢失、资料修改、退出和注销。
+Secret 初始化、旧 ConfigMap 安全迁移、损坏/丢失、资料修改、退出和注销。
 
 ## 文档
 
