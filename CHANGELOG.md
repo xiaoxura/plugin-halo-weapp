@@ -23,6 +23,8 @@
 - 微信读者身份 ADR、公开 Moment 集成 ADR、v0.2.0 OpenAPI 与扩展威胁模型
 - Halo API 2.23.0 / 2.25.0 编译测试矩阵和 develop/v0.2.0 CI；默认正式产物仍以最低
   API 2.23.0 构建
+- 可复现的 Halo 平台依赖审计脚本：分别解析 Gradle compileClasspath 与官方宿主镜像 runtime
+  jar，记录镜像 digest、完整坐标覆盖和 OSV 命中，并支持 findings 门禁退出码
 
 ### 变更
 

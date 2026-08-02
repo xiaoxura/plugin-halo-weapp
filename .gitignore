@@ -20,6 +20,10 @@ bin/
 *.log
 .DS_Store
 
+# Python 安全审计工具缓存
+__pycache__/
+*.py[cod]
+
 # Halo Gradle DevTools 本地运行目录
 workplace/
 .docker/

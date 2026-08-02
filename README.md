@@ -102,6 +102,29 @@ v0.2.0 RC 当前有 106 项 Java 自动化测试，覆盖配置门禁、插件�
 匿名 RBAC、匿名/账号会话、内容安全、频控、幂等、读者身份 HMAC、并发首次创建、identityKey
 Secret 初始化、旧 ConfigMap 安全迁移、损坏/丢失、资料修改、退出和注销。
 
+### Halo 平台依赖审计
+
+插件 jar 不内嵌 Halo、Spring、Jackson、Netty 等第三方 class，因此插件编译 classpath 与实际
+Halo 宿主镜像必须分开审计。以下命令解析双 API platform，并直接从两个官方 Halo 镜像提取
+runtime jar 后按 Maven 坐标调用 OSV querybatch：
+
+```bash
+python3 scripts/security/audit-halo-platform.py \
+  --runtime-image 2.23.3=halohub/halo:2.23.3 \
+  --runtime-image 2.25.4=halohub/halo:2.25.4 \
+  --coordinate-hint org.springframework.boot:spring-boot-jarmode-tools \
+  --output build/reports/security/halo-platform-osv.json
+```
+
+`--coordinate-hint` 只为不含 `pom.properties` 且不在 Gradle 图中的 Spring Boot jarmode jar
+补充 group；报告仍记录该 jar 的文件名检测来源。脚本还会记录镜像 digest、当时的 Halo 最新
+Release / plugin API platform，并保证每个 runtime jar 都已识别，否则拒绝出具报告。仅 Maven
+包名和版本会发往 OSV.dev，不发送源码、配置或凭据。
+
+需要把结果作为自动门禁时追加 `--fail-on-findings`；脚本会先原子写出 JSON，再以状态 1 退出。
+命中只证明受影响版本存在，不等同于插件调用链可利用；但未经逐项分析、宿主升级或正式风险接受，
+也不能把薄插件的构建成功当作平台风险已解除。
+
 ## 文档
 
 - [OpenAPI](docs/openapi.yaml) — API 契约唯一事实来源
