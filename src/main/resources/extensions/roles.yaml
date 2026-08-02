@@ -1,6 +1,7 @@
 # 将插件公开接口聚合到匿名角色，使小程序无需 Halo 账号即可访问。
 # 机制见 https://docs.halo.run 与社区实践：role-template + aggregate-to-anonymous。
-# 资源名 = 版本后的首段路径，子资源形如 comments/replies。
+# 资源名 = 版本后的首段路径，子资源形如 comments/replies、auth/profile。
+# 注意：这里只授权公开 auth 路由，绝不授权 weapp.halo.run/weappusers。
 apiVersion: v1alpha1
 kind: Role
 metadata:
@@ -16,6 +17,15 @@ rules:
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["session"]
     verbs: ["create"]
+  - apiGroups: ["api.weapp.halo.run"]
+    resources: ["auth/login"]
+    verbs: ["create"]
+  - apiGroups: ["api.weapp.halo.run"]
+    resources: ["auth/profile"]
+    verbs: ["get", "patch"]
+  - apiGroups: ["api.weapp.halo.run"]
+    resources: ["auth/session", "auth/account"]
+    verbs: ["delete"]
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["comments", "comments/replies"]
     verbs: ["create"]

@@ -2,6 +2,7 @@ package run.halo.weapp.security;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,5 +78,46 @@ class SessionServiceTest {
         assertNotEquals(t1, t2);
         assertEquals("openid-1", service.validate(t1));
         assertEquals("openid-2", service.validate(t2));
+    }
+
+    @Test
+    void accountSessionCarriesInternalReaderAndTemporarySessionCannotUseAuthApi() {
+        SessionService service = new SessionService();
+        String temporary = service.create("openid-1");
+        assertEquals(ErrorCode.SESSION_REQUIRED,
+            assertThrows(ApiException.class, () -> service.validateAccount(temporary)).code());
+
+        String account = service.createAccount("openid-1", "reader-a");
+        SessionService.SessionPrincipal principal = service.validateAccount(account);
+        assertEquals("openid-1", principal.openId());
+        assertEquals("reader-a", principal.readerName());
+        assertTrue(principal.isAccount());
+        assertFalse(principal.toString().contains("openid-1"));
+        assertFalse(principal.toString().contains("reader-a"));
+    }
+
+    @Test
+    void revokeCurrentAndRevokeAllReaderSessionsAreImmediate() {
+        SessionService service = new SessionService();
+        String readerA1 = service.createAccount("openid-a", "reader-a");
+        String readerA2 = service.createAccount("openid-a", "reader-a");
+        String readerB = service.createAccount("openid-b", "reader-b");
+        assertTrue(service.revoke(readerA1));
+        assertEquals(ErrorCode.SESSION_EXPIRED,
+            assertThrows(ApiException.class, () -> service.validate(readerA1)).code());
+        assertEquals(1, service.revokeAllByReaderName("reader-a"));
+        assertEquals(ErrorCode.SESSION_EXPIRED,
+            assertThrows(ApiException.class, () -> service.validate(readerA2)).code());
+        assertEquals("openid-b", service.validate(readerB));
+    }
+
+    @Test
+    void clearRevokesTemporaryAndAccountSessions() {
+        SessionService service = new SessionService();
+        String temporary = service.create("openid-a");
+        String account = service.createAccount("openid-b", "reader-b");
+        service.clear();
+        assertThrows(ApiException.class, () -> service.validate(temporary));
+        assertThrows(ApiException.class, () -> service.validate(account));
     }
 }

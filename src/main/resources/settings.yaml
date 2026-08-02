@@ -151,7 +151,7 @@ spec:
         - $formkit: text
           name: minVersion
           label: 小程序最低版本
-          help: 严格 SemVer（如 0.3.0）；低于该版本的客户端将被关闭写能力
+          help: 严格 SemVer（如 0.4.0）；低于该版本的客户端将被关闭评论写入与读者登录能力
           value: "0.3.0"
         - $formkit: text
           name: privacyPolicyUrl

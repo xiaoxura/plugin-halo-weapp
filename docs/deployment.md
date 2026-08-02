@@ -76,5 +76,12 @@
   用户标识为 HMAC 不可逆哈希，可安全收集；
 - 微信内容安全接口有日调用额度（未上架小程序额度较低），
   频控参数（每分钟/每小时）可按后台压力调整；
-- 备份注意：插件配置存于 Halo ConfigMap（`plugin-halo-weapp-configmap`），
-  包含 AppSecret 密文，备份文件需同等保密。
+- 备份必须同时覆盖两个 Halo ConfigMap：Setting 配置位于
+  `plugin-halo-weapp-configmap`（包含 AppSecret 密文），读者身份 HMAC 密钥单独位于
+  `plugin-halo-weapp-identity`（首次使用身份能力时生成，仅含 `identityKey`）；两者都应加密保存，
+  并限制备份读取权限；
+- 保存或重置插件设置只会更新 Setting ConfigMap，不应删除或重建
+  `plugin-halo-weapp-identity`。升级、回滚、停用或卸载插件时默认保留该内部 ConfigMap；重新安装
+  前应先确认它仍存在；
+- 恢复时必须原样恢复同一份 `identityKey`，并在开放登录前演练已有账号恢复。密钥丢失或损坏时
+  服务会失败关闭，既有 `WeAppUser` 无法由 OpenID 再定位；禁止静默生成新密钥并宣称旧账号可恢复。

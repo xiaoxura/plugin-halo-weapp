@@ -136,6 +136,8 @@ paths:
         首次创建必须提供 2～20 个 Unicode 字符的 displayName，且昵称通过微信
         msgSecCheck；恢复已有身份时 displayName 可省略。privacyConsentVersion
         必须与当前配置完全一致。
+      parameters:
+        - $ref: '#/components/parameters/ReaderClientVersionHeader'
       requestBody:
         required: true
         content:
@@ -157,6 +159,10 @@ paths:
           $ref: '#/components/responses/PrivacyConsentRequired'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ContentReviewError'
+        '426':
+          $ref: '#/components/responses/ClientUpdateRequired'
         '502':
           $ref: '#/components/responses/BadGateway'
         '503':
@@ -179,6 +185,8 @@ paths:
           $ref: '#/components/responses/SessionError'
         '404':
           $ref: '#/components/responses/ReaderNotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
     patch:
       tags: [auth]
       operationId: updateReaderProfile
@@ -188,6 +196,7 @@ paths:
         msgSecCheck。客户端不能修改身份摘要、内部资源名或隐私同意历史。
       parameters:
         - $ref: '#/components/parameters/SessionHeader'
+        - $ref: '#/components/parameters/ReaderClientVersionHeader'
       requestBody:
         required: true
         content:
@@ -213,8 +222,14 @@ paths:
           $ref: '#/components/responses/PrivacyConsentRequired'
         '429':
           $ref: '#/components/responses/RateLimited'
+        '422':
+          $ref: '#/components/responses/ContentReviewError'
+        '426':
+          $ref: '#/components/responses/ClientUpdateRequired'
         '502':
           $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /auth/session:
     delete:
       tags: [auth]
@@ -245,6 +260,8 @@ paths:
           $ref: '#/components/responses/SessionError'
         '404':
           $ref: '#/components/responses/ReaderNotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /comments:
     post:
       tags: [comment]
@@ -412,6 +429,17 @@ components:
       schema:
         type: string
         example: 0.3.0
+    ReaderClientVersionHeader:
+      name: X-WeApp-Client-Version
+      in: header
+      required: true
+      description: >
+        微信读者登录和资料修改只由 v0.4.0+ 客户端调用。必须是合法 SemVer，
+        且不得低于实时配置 minVersion；缺失、非法或过低均返回
+        `CLIENT_UPDATE_REQUIRED`，不能依靠旧客户端或缓存绕过。
+      schema:
+        type: string
+        example: 0.4.0
   schemas:
     PublicConfig:
       type: object

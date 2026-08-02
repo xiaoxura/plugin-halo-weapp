@@ -1,8 +1,12 @@
 package run.halo.weapp;
 
 import org.springframework.stereotype.Component;
+import run.halo.app.extension.Scheme;
+import run.halo.app.extension.SchemeManager;
 import run.halo.app.plugin.BasePlugin;
 import run.halo.app.plugin.PluginContext;
+import run.halo.weapp.identity.WeAppUser;
+import run.halo.weapp.security.SessionService;
 
 /**
  * HaloWeApp 微信小程序配套插件主类。
@@ -14,17 +18,29 @@ import run.halo.app.plugin.PluginContext;
 @Component
 public class WeappPlugin extends BasePlugin {
 
-    public WeappPlugin(PluginContext pluginContext) {
+    private final SchemeManager schemeManager;
+    private final SessionService sessionService;
+    private Scheme weAppUserScheme;
+
+    public WeappPlugin(PluginContext pluginContext, SchemeManager schemeManager,
+                       SessionService sessionService) {
         super(pluginContext);
+        this.schemeManager = schemeManager;
+        this.sessionService = sessionService;
     }
 
     @Override
     public void start() {
-        // 启动诊断在 diagnostics 包中按需执行，此处不做阻塞性检查
+        schemeManager.register(WeAppUser.class);
+        weAppUserScheme = schemeManager.get(WeAppUser.class);
     }
 
     @Override
     public void stop() {
-        // 内存会话随插件停止全部失效，客户端将收到 SESSION_EXPIRED 并重新登录
+        sessionService.clear();
+        if (weAppUserScheme != null) {
+            schemeManager.unregister(weAppUserScheme);
+            weAppUserScheme = null;
+        }
     }
 }

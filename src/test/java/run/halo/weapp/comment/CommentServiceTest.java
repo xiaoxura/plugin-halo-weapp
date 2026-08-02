@@ -36,6 +36,7 @@ class CommentServiceTest {
     private FakeGateway gateway;
     private CommentService commentService;
     private String sessionToken;
+    private SessionService sessionService;
 
     private static final String OPEN_ID = "openid-real-value";
     private static final String IDEM_KEY = "12345678-abcd";
@@ -46,7 +47,7 @@ class CommentServiceTest {
         extensionClient = mock(ReactiveExtensionClient.class);
         weChatClient = new FakeWeChatClient();
         gateway = new FakeGateway();
-        SessionService sessionService = new SessionService();
+        sessionService = new SessionService();
         sessionToken = sessionService.create(OPEN_ID);
         commentService = new CommentService(settings, sessionService, new RateLimitService(),
             new IdempotencyService(), weChatClient, gateway, extensionClient,
@@ -126,6 +127,18 @@ class CommentServiceTest {
             .expectErrorSatisfies(t -> expectError(ErrorCode.SESSION_EXPIRED, t))
             .verify();
         assertEquals(0, gateway.calls);
+    }
+
+    @Test
+    void accountSessionReusesSameOpenIdForExistingCommentPipeline() {
+        givenCommentablePost();
+        String accountToken = sessionService.createAccount(OPEN_ID, "reader-internal");
+        StepVerifier.create(commentService.submitComment(accountToken, IDEM_KEY + "-account",
+                null, null, command()))
+            .assertNext(result -> assertEquals("published", result.status()))
+            .verifyComplete();
+        assertEquals(OPEN_ID, weChatClient.lastOpenId);
+        assertEquals(1, gateway.calls);
     }
 
     // ---------- 请求体校验 ----------

@@ -21,14 +21,15 @@ v0.4.0 需要让用户主动建立可感知的“微信读者”身份，同时�
 
 ### 确定性身份与密钥
 
-- 首次需要读者身份时生成 32 字节 `SecureRandom` identityKey，以 Base64 编码存入插件内部
-  ConfigMap `plugin-halo-weapp-configmap` 的 `identityKey` 数据项；
+- 首次需要读者身份时生成 32 字节 `SecureRandom` identityKey，以 Base64 编码存入独立的插件
+  内部 ConfigMap `plugin-halo-weapp-identity` 的 `identityKey` 数据项。该 ConfigMap 与 Setting
+  使用的 `plugin-halo-weapp-configmap` 隔离，避免 Halo 保存或重置插件设置时覆盖密钥；
 - identityKey 不进入 Setting 表单、公开 DTO、日志、错误、jar 资源或测试快照；
 - 身份摘要固定为 `HMAC-SHA256(identityKey, appId + ":" + openId)`；AppID 参与输入，切换
   AppID 不会复用旧身份；
 - `WeAppUser.metadata.name` 为 `reader-` 加摘要的稳定 160-bit 十六进制前缀。名称只用于插件
   内部资源定位，不通过 Public API 返回；
-- identityKey 必须随 ConfigMap 加密备份。丢失后无法从资源名反推 OpenID，轮换必须通过
+- identityKey 必须随独立 ConfigMap 加密备份。丢失后无法从资源名反推 OpenID，轮换必须通过
   显式迁移完成，禁止静默重置后宣称旧账号仍可恢复。
 
 ### 持久资源
