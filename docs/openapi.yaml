@@ -11,18 +11,20 @@ info:
     - 路径保持 `v1alpha1`；
     - `schemaVersion: 1` 内只允许增加可选字段；
     - 删除、改名、修改字段类型时提升 `schemaVersion`；
-    - 客户端遇到高于自身支持范围的 `schemaVersion` 时保持只读，不尝试评论写入；
+    - 客户端遇到高于自身支持范围的 `schemaVersion` 时保持只读，不尝试登录或写入；
     - 所有错误使用稳定业务码（`code`），客户端不得依赖中文 `message` 做逻辑判断。
 
     ## 安全原则
 
     - AppSecret、微信 access token、OpenID、session_key 只存在于服务端；
+    - 微信读者资源只持久化 HMAC 身份摘要派生的内部名称与用户主动填写的昵称，
+      不持久化原始 OpenID，也不创建 Halo User；
     - 评论/回复写入必须经过：实时开关校验 → 会话校验 → 频控 → 幂等 →
       微信 `msgSecCheck`（scene=2, version=2，仅 `pass` 放行）→ Halo Public Comment API；
     - 客户端不得传入 `group`/`kind`/`version`/`approved`/`hidden`/HTML/头像/邮箱/网站；
     - 评论读取仍直接使用 Halo Public API（`/apis/api.halo.run/v1alpha1/comments`），
       不经过本插件。
-  version: 0.1.0
+  version: 0.2.0
   contact:
     name: HaloWeApp
     url: https://github.com/xiaoxura/plugin-halo-weapp
@@ -33,6 +35,8 @@ tags:
     description: 公开运行时配置
   - name: session
     description: 微信登录短会话
+  - name: auth
+    description: 微信读者身份、资料、退出与注销
   - name: comment
     description: 安全评论/回复写入
 paths:
@@ -55,6 +59,17 @@ paths:
               example:
                 schemaVersion: 1
                 generatedAt: '2026-08-01T08:00:00Z'
+                site:
+                  blogName: 技术博客
+                  blogDesc: Halo 驱动
+                  pageSize: 10
+                  fontUrl: ''
+                features:
+                  moments:
+                    enabled: false
+                    commentEnabled: false
+                  readerAccount:
+                    enabled: false
                 commentEnabled: false
                 commentOptions:
                   submitEnabled: false
@@ -108,6 +123,128 @@ paths:
                 code: WECHAT_UNAVAILABLE
                 message: 登录服务暂时不可用，请稍后重试
                 requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+  /auth/login:
+    post:
+      tags: [auth]
+      operationId: loginReader
+      summary: 登录或恢复微信读者身份
+      description: >
+        仅在 `features.readerAccount.enabled=true` 且服务端本次实时读取设置成功时可用。
+        使用 wx.login code 在服务端换取 OpenID，并以
+        `HMAC-SHA256(identityKey, appId + ":" + openId)` 派生确定性内部身份。
+        OpenID、identityKey、完整摘要与内部资源名均不返回客户端。
+        首次创建必须提供 2～20 个 Unicode 字符的 displayName，且昵称通过微信
+        msgSecCheck；恢复已有身份时 displayName 可省略。privacyConsentVersion
+        必须与当前配置完全一致。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReaderLoginRequest'
+      responses:
+        '200':
+          description: 登录或恢复成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReaderAuthResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ReaderAccountDisabled'
+        '428':
+          $ref: '#/components/responses/PrivacyConsentRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+  /auth/profile:
+    get:
+      tags: [auth]
+      operationId: getReaderProfile
+      summary: 查询当前微信读者资料
+      parameters:
+        - $ref: '#/components/parameters/SessionHeader'
+      responses:
+        '200':
+          description: 当前读者公开资料
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReaderProfile'
+        '401':
+          $ref: '#/components/responses/SessionError'
+        '404':
+          $ref: '#/components/responses/ReaderNotFound'
+    patch:
+      tags: [auth]
+      operationId: updateReaderProfile
+      summary: 修改当前微信读者昵称
+      description: >
+        要求实时 readerAccount 开关、有效账号会话和当前隐私版本；昵称重新执行频控与
+        msgSecCheck。客户端不能修改身份摘要、内部资源名或隐私同意历史。
+      parameters:
+        - $ref: '#/components/parameters/SessionHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReaderProfileUpdateRequest'
+      responses:
+        '200':
+          description: 修改后的公开资料
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReaderProfile'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/SessionError'
+        '403':
+          $ref: '#/components/responses/ReaderAccountDisabled'
+        '404':
+          $ref: '#/components/responses/ReaderNotFound'
+        '428':
+          $ref: '#/components/responses/PrivacyConsentRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+  /auth/session:
+    delete:
+      tags: [auth]
+      operationId: logoutReader
+      summary: 退出当前设备
+      description: 立即撤销当前 token，不删除读者资料，也不影响其他设备会话。
+      parameters:
+        - $ref: '#/components/parameters/SessionHeader'
+      responses:
+        '204':
+          description: 当前会话已撤销；重复退出同样按成功处理
+        '401':
+          $ref: '#/components/responses/SessionError'
+  /auth/account:
+    delete:
+      tags: [auth]
+      operationId: deleteReaderAccount
+      summary: 注销微信读者账号
+      description: >
+        删除读者资料与可关联身份摘要，并撤销该读者全部内存会话。已经公开发表到 Halo
+        的评论不会自动删除；客户端必须在二次确认中明确说明这一点。
+      parameters:
+        - $ref: '#/components/parameters/SessionHeader'
+      responses:
+        '204':
+          description: 账号已删除且全部会话已撤销
+        '401':
+          $ref: '#/components/responses/SessionError'
+        '404':
+          $ref: '#/components/responses/ReaderNotFound'
   /comments:
     post:
       tags: [comment]
@@ -321,6 +458,34 @@ components:
               type: string
               description: 可选的 HTTPS 字体文件地址；空字符串表示使用系统字体
               example: ''
+        features:
+          type: object
+          description: >
+            v0.2.0 可选能力节点；为兼容 v0.1.0 仍属于 schemaVersion=1 的可选扩展。
+            旧插件缺失时客户端必须把全部开关视为 false。缓存只可恢复 moments 只读展示，
+            不得开启 readerAccount 或任何写能力。
+          required: [moments, readerAccount]
+          properties:
+            moments:
+              type: object
+              required: [enabled, commentEnabled]
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                  description: 是否允许展示公开 Moment；仍需本次冷启动探测 PluginMoments 可用
+                commentEnabled:
+                  type: boolean
+                  default: false
+                  description: v0.4.1 预留的 Moment 评论展示开关；v0.4.0 不提供写入 UI
+            readerAccount:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+                  default: false
+                  description: 是否允许微信读者登录；仅实时配置可开启
         commentEnabled:
           type: boolean
           description: 评论区是否展示（读取）
@@ -384,6 +549,62 @@ components:
           type: integer
           description: 会话有效期（秒），默认 5400（90 分钟）
           example: 5400
+    ReaderLoginRequest:
+      type: object
+      required: [code, privacyConsentVersion]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: wx.login 返回的一次性 code
+        privacyConsentVersion:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: 用户已主动同意的当前隐私政策版本
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 20
+          description: 首次创建账号时必填；恢复已有账号时可省略
+    ReaderAuthResponse:
+      type: object
+      required: [sessionToken, expiresIn, profile]
+      properties:
+        sessionToken:
+          type: string
+          description: 仅保存在客户端内存的随机不透明 token
+        expiresIn:
+          type: integer
+          example: 5400
+        profile:
+          $ref: '#/components/schemas/ReaderProfile'
+    ReaderProfile:
+      type: object
+      required: [displayName, privacyPolicyVersion]
+      description: >
+        可缓存的公开资料；不包含认证状态、token、OpenID、身份摘要或内部资源名。
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 20
+        privacyPolicyVersion:
+          type: string
+          maxLength: 100
+    ReaderProfileUpdateRequest:
+      type: object
+      required: [displayName, privacyConsentVersion]
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 20
+        privacyConsentVersion:
+          type: string
+          minLength: 1
+          maxLength: 100
     CommentCreateRequest:
       type: object
       required: [postName, displayName, content, privacyConsentVersion]
@@ -458,6 +679,9 @@ components:
             - VALIDATION_ERROR
             - SESSION_REQUIRED
             - SESSION_EXPIRED
+            - READER_ACCOUNT_DISABLED
+            - READER_NOT_FOUND
+            - PRIVACY_CONSENT_REQUIRED
             - COMMENT_DISABLED
             - REPLY_DISABLED
             - POST_NOT_FOUND
@@ -507,6 +731,36 @@ components:
                 code: SESSION_EXPIRED
                 message: 登录已过期，请重新登录
                 requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    ReaderAccountDisabled:
+      description: 微信读者账号能力未实时开启
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: READER_ACCOUNT_DISABLED
+            message: 微信读者登录暂未开放
+            requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    ReaderNotFound:
+      description: 当前会话关联的微信读者账号不存在或已经注销
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: READER_NOT_FOUND
+            message: 微信读者账号不存在
+            requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+    PrivacyConsentRequired:
+      description: 隐私版本缺失、过期或与当前配置不一致
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: PRIVACY_CONSENT_REQUIRED
+            message: 请阅读并同意最新隐私政策
+            requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
     ConflictError:
       description: 文章禁止评论或幂等键冲突（客户端停止提交并提示）
       content:

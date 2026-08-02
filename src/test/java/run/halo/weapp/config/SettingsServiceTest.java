@@ -38,6 +38,11 @@ class SettingsServiceTest {
         assertEquals(10, site.pageSize());
         assertEquals("", site.fontUrl());
 
+        SettingsService.FeatureConfig features = settings.features();
+        assertFalse(features.momentsEnabled());
+        assertFalse(features.momentCommentEnabled());
+        assertFalse(features.readerAccountEnabled());
+
         SettingsService.ClientConfig client = settings.client();
         assertEquals("0.3.0", client.minVersion());
         assertEquals(5000L, client.upstreamTimeoutMillis());
@@ -56,6 +61,7 @@ class SettingsServiceTest {
         assertEquals(500, settings.comment().maxLength());
         assertEquals(5000L, settings.client().upstreamTimeoutMillis());
         assertEquals(10, settings.site().pageSize());
+        assertFalse(settings.features().readerAccountEnabled());
         assertFalse(settings.wechat().isConfigured());
     }
 
@@ -65,6 +71,8 @@ class SettingsServiceTest {
             new CommentSettings(true, true, null, null, -1, null)));
         when(fetcher.fetch("site", SiteSettings.class)).thenReturn(Optional.of(
             new SiteSettings(" ", null, 101, "http://unsafe.example/font.woff2")));
+        when(fetcher.fetch("features", FeatureSettings.class)).thenReturn(Optional.of(
+            new FeatureSettings(true, null, false)));
         SettingsService.CommentConfig comment = settings.comment();
         assertTrue(comment.commentEnabled());
         assertTrue(comment.submitEnabled());
@@ -76,6 +84,9 @@ class SettingsServiceTest {
         assertEquals("记录技术 · 记录生活", site.blogDesc());
         assertEquals(10, site.pageSize());
         assertEquals("", site.fontUrl());
+        assertTrue(settings.features().momentsEnabled());
+        assertFalse(settings.features().momentCommentEnabled());
+        assertFalse(settings.features().readerAccountEnabled());
     }
 
     @Test
@@ -86,6 +97,8 @@ class SettingsServiceTest {
             new ClientSettings("0.4.0", "https://example.com/privacy", "2026-08-01", 8000L)));
         when(fetcher.fetch("site", SiteSettings.class)).thenReturn(Optional.of(
             new SiteSettings("技术博客", "Halo 驱动", 20, "https://cdn.example.com/font.woff2")));
+        when(fetcher.fetch("features", FeatureSettings.class)).thenReturn(Optional.of(
+            new FeatureSettings(true, false, true)));
 
         assertTrue(settings.wechat().isConfigured());
         SettingsService.ClientConfig client = settings.client();
@@ -97,6 +110,9 @@ class SettingsServiceTest {
         assertEquals("Halo 驱动", site.blogDesc());
         assertEquals(20, site.pageSize());
         assertEquals("https://cdn.example.com/font.woff2", site.fontUrl());
+        assertTrue(settings.features().momentsEnabled());
+        assertFalse(settings.features().momentCommentEnabled());
+        assertTrue(settings.features().readerAccountEnabled());
     }
 
     @Test
@@ -107,12 +123,14 @@ class SettingsServiceTest {
             new CommentSettings(true, true, false, 300, 5, 30)));
         when(fetcher.fetch("site", SiteSettings.class)).thenReturn(Optional.of(
             new SiteSettings("技术博客", "Halo 驱动", 20, "https://cdn.example.com/font.woff2")));
+        when(fetcher.fetch("features", FeatureSettings.class)).thenReturn(Optional.of(
+            new FeatureSettings(true, false, true)));
         when(fetcher.fetch("announcement", AnnouncementSettings.class)).thenReturn(
             Optional.of(new AnnouncementSettings(true, "v1", "hello")));
         when(fetcher.fetch("client", ClientSettings.class)).thenReturn(Optional.of(
             new ClientSettings("0.3.0", "https://example.com/privacy", "2026-08-01", 5000L)));
 
-        PublicConfig config = PublicConfig.from(settings.site(), settings.comment(),
+        PublicConfig config = PublicConfig.from(settings.site(), settings.features(), settings.comment(),
             settings.announcement(), settings.client());
         assertEquals(1, config.schemaVersion());
 
@@ -126,6 +144,8 @@ class SettingsServiceTest {
         assertTrue(json.contains("\"nicknameRequired\":true"));
         assertTrue(json.contains("\"blogName\":\"技术博客\""));
         assertTrue(json.contains("\"pageSize\":20"));
+        assertTrue(json.contains("\"moments\":{\"enabled\":true,\"commentEnabled\":false}"));
+        assertTrue(json.contains("\"readerAccount\":{\"enabled\":true}"));
         assertTrue(json.contains("\"privacyPolicyVersion\":\"2026-08-01\""));
     }
 }

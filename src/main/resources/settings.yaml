@@ -42,6 +42,39 @@ spec:
           label: 自定义字体 URL
           help: 可选；必须是已加入小程序 downloadFile 合法域名的 HTTPS 字体地址
           value: ""
+    - group: features
+      label: v0.4.0 新能力
+      formSchema:
+        - $formkit: select
+          name: momentsEnabled
+          label: 瞬间展示
+          help: 控制小程序是否展示公开瞬间；需同时安装并启用 PluginMoments >= 1.15.0
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
+        - $formkit: select
+          name: momentCommentEnabled
+          label: 瞬间评论展示
+          help: v0.4.1 预留开关；v0.4.0 客户端不会开放瞬间评论写入
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
+        - $formkit: select
+          name: readerAccountEnabled
+          label: 微信读者登录
+          help: 控制微信读者身份的登录、恢复与资料修改；初始部署请保持关闭
+          options:
+            - label: 开启
+              value: true
+            - label: 关闭
+              value: false
+          value: false
     - group: comment
       label: 评论
       formSchema:

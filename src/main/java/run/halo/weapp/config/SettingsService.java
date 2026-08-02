@@ -9,7 +9,7 @@ import run.halo.app.plugin.SettingFetcher;
 /**
  * 设置读取门面：每次调用实时从 SettingFetcher 拉取并按分组返回不可变快照。
  * 所有字段 fail-closed：缺失、为 null 或反序列化异常时一律落回默认值
- * （开关默认关闭、站点展示使用安全默认值、maxLength 500、每分钟 3、每小时 20、
+ * （开关与新增能力默认关闭、站点展示使用安全默认值、maxLength 500、每分钟 3、每小时 20、
  * minVersion 0.3.0、超时 5000ms）。
  */
 @Component
@@ -49,6 +49,18 @@ public class SettingsService {
             raw.blogDesc() == null ? DEFAULT_BLOG_DESC : raw.blogDesc(),
             boundedOrDefault(raw.pageSize(), 1, 100, DEFAULT_PAGE_SIZE),
             httpsUrlOrEmpty(raw.fontUrl()));
+    }
+
+    /** v0.2.0 新增能力开关；缺失或异常一律全部关闭。 */
+    public FeatureConfig features() {
+        FeatureSettings raw = fetch("features", FeatureSettings.class);
+        if (raw == null) {
+            raw = new FeatureSettings(null, null, null);
+        }
+        return new FeatureConfig(
+            Boolean.TRUE.equals(raw.momentsEnabled()),
+            Boolean.TRUE.equals(raw.momentCommentEnabled()),
+            Boolean.TRUE.equals(raw.readerAccountEnabled()));
     }
 
     /** 评论设置快照（开关 + 长度 + 频控阈值）。 */
@@ -130,6 +142,10 @@ public class SettingsService {
     }
 
     public record SiteConfig(String blogName, String blogDesc, int pageSize, String fontUrl) {
+    }
+
+    public record FeatureConfig(boolean momentsEnabled, boolean momentCommentEnabled,
+                                boolean readerAccountEnabled) {
     }
 
     public record CommentConfig(boolean commentEnabled, boolean submitEnabled,

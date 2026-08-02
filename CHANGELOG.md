@@ -4,6 +4,16 @@
 
 ## [未发布]
 
+### 新增
+
+- 公开配置 `features.moments` / `features.readerAccount` 节点与 Halo Setting 开关，默认全部关闭
+- 微信读者登录、资料、退出与注销 OpenAPI 契约，以及身份最小化和 Moment 集成 ADR
+- identityKey、WeAppUser、缓存门禁与可选 Moment 依赖的威胁模型
+
+### 变更
+
+- 插件开发版本升级为 0.2.0；配置 schemaVersion 保持 1，仅增加向后兼容可选节点
+
 ## [0.1.0] - 2026-08-02
 
 HaloWeApp v0.3.0 的首个配套插件正式版本。

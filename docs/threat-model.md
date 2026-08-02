@@ -1,7 +1,8 @@
-# 威胁模型（plugin-halo-weapp v0.1.0 / HaloWeApp v0.3.0）
+# 威胁模型（plugin-halo-weapp v0.2.0 / HaloWeApp v0.4.0）
 
-> 状态：M0 冻结基线。新增能力前先更新本文档。
-> 范围：小程序 → 插件 → 微信 API / Halo Public API 的评论写入链路，以及远程配置下发链路。
+> 状态：M1 已接受。实现、OpenAPI 与 ADR-0003/0004 必须保持一致。
+> 范围：小程序 → 配套插件 / Moment 插件 → 微信 API / Halo API 的公开读取、评论写入、
+> 微信读者身份与远程配置链路。
 
 ## 1. 资产
 
@@ -9,10 +10,14 @@
 | --- | --- | --- |
 | 小程序 AppSecret | 插件 Setting（密码字段） | 不进入 Git、jar 资源、公开配置、日志、测试夹具 |
 | 微信 access token | 插件内存缓存 | 不返回客户端，不写日志 |
-| 微信 session_key | 插件内存会话 | 不持久化、不返回客户端、不写日志 |
-| 用户 OpenID | 插件内存会话（90 分钟） | 不写入 Halo Comment、不输出日志；日志使用带 salt 的 HMAC |
+| 微信 session_key | code2Session 响应解析期间 | 立即丢弃、不进入会话、不持久化、不返回客户端、不写日志 |
+| 用户 OpenID | 插件内存会话（90 分钟） | 不写入 WeAppUser/Halo Comment、不输出日志；诊断仅使用不可逆短标签 |
+| identityKey | 插件内部 ConfigMap 数据项 | 256 bit；不进入 Setting 表单、公开 DTO、日志、jar 或测试快照；加密备份 |
+| 微信读者昵称 | WeAppUser | 用户主动提供；2～20 字；创建/修改均通过 msgSecCheck；可注销 |
+| 读者身份摘要前缀 | WeAppUser metadata.name | 不返回客户端、不聚合到 anonymous；随账号注销删除 |
+| 账号 session token | 双端内存（90 分钟） | 不写客户端 storage/URL/日志；退出立即撤销，注销撤销全部 |
 | 评论内容 | Halo Comment/Reply | 仅通过微信 `msgSecCheck`（pass）后写入 |
-| 配置开关（评论/回复提交） | Halo ConfigMap | 写能力 fail-closed，实时校验，不依赖客户端缓存 |
+| 配置开关（评论/身份/瞬间） | Halo ConfigMap | 写入和登录 fail-closed；新开关默认 false；缓存只允许只读展示 |
 
 ## 2. 信任边界
 
@@ -23,6 +28,10 @@
 3. **插件 ↔ Halo**：插件以同站点 Public Comment API 写入，不持有 PAT，
    不伪造管理员身份，不反射调用内部 Service。
 4. **配置下发**：公开 config 是显式白名单 DTO，不直接序列化 Setting 对象。
+5. **插件 ↔ WeAppUser 扩展存储**：资源 scheme 不聚合 anonymous；资源不保存原始 OpenID，
+   identityKey 只通过内部 ConfigMap 服务访问。
+6. **小程序 ↔ Moment Public API**：只读取匿名 API；固定 PluginMoments 名称和路径；不携带
+   PAT/Console Cookie/UC 身份，不把 Public API 响应当作可信 HTML 直接执行。
 
 ## 3. 威胁与缓解
 
@@ -40,12 +49,24 @@
 | T-10 | 插件配置被后台误改 | 写能力被意外开放 | 后台开关默认关闭；提交时服务端再次实时校验开关 |
 | T-11 | 受信任代理头伪造来源 IP | 绕过 IP 频控 | 仅配置受信代理时解析 X-Forwarded-For，未配置不盲信客户端 header |
 | T-12 | Halo 内部 API 变动 | 插件在新版本失效 | 只依赖 Public API；2.23.x/2.25.4 双版本集成测试夹具；网关隔离（ADR-0001） |
+| T-13 | 原始 OpenID/完整摘要落盘或进入响应 | 可关联用户身份、违反最小化原则 | HMAC 派生确定性内部名称；WeAppUser 只保存昵称与隐私版本；DTO/错误/日志白名单与敏感词测试 |
+| T-14 | identityKey 泄露、丢失或被静默轮换 | 可离线关联内部身份，或所有账号无法恢复 | 32 字节随机 key；内部 ConfigMap；加密备份和恢复演练；禁止日志/表单/公开 DTO；轮换必须迁移 |
+| T-15 | 并发首次登录创建重复账号 | 资料分叉、注销不完整 | HMAC 确定性资源名；create 冲突后 fetch；并发自动化测试 |
+| T-16 | 缓存配置创建账号或恢复 token | 远程关闭后仍收集个人信息 | canLogin 必须实时配置成功、版本满足、隐私契约完整；缓存资料不等于认证态 |
+| T-17 | 隐私版本变化后静默恢复/改资料 | 缺少最新同意 | 请求必须回传当前版本；客户端暂停恢复；服务端返回 PRIVACY_CONSENT_REQUIRED |
+| T-18 | 退出/注销后 token 仍可使用 | 越权访问已撤销账号 | 当前 token 精确撤销；账号会话携带 readerName；注销按 readerName 撤销全部并删除资源 |
+| T-19 | 可配置插件名/路径探测内网或任意 API | 客户端被导向非预期资源 | PluginMoments 名称与 available/Public API 路径编译期固定；页面不拼 endpoint |
+| T-20 | Moment HTML/未知媒体执行脚本或危险 URL | XSS、协议滥用、页面崩溃 | adapter 白名单；既有 HTML sanitizer；只接受 HTTPS；未知媒体不可执行占位；媒体生命周期释放 |
+| T-21 | 陈旧 Moment 索引制造死链 | 用户进入不存在/停用内容 | 当前冷启动 available 探测；功能关闭时过滤 Moment 命中；详情 404/不可用独立状态 |
 
 ## 4. 明确的非目标
 
 - 插件只保证**小程序写入链路**经过检测，不替代博客 Web 端自身的反滥用措施；
 - 不防御 Halo 管理员账号被盗后的恶意配置（属 Halo 自身安全边界）；
-- 不实现用户身份持久化、评论删除/举报（v0.4.0+ 另行建模）。
+- 微信读者不是 Halo User，不支持私有内容、Console/UC、管理员登录或作者发布；
+- 不持久化 token、OpenID、微信头像、手机号、邮箱、网站或位置；
+- 注销不自动删除已公开 Halo 评论；评论删除/举报与数据主体请求另行设计；
+- v0.4.0 不实现 Moment 评论写入，预留开关不得被解释为已支持。
 
 ## 5. 发布前检查
 
@@ -53,3 +74,8 @@
 - [ ] 日志关键字扫描：敏感词命中数为 0；
 - [ ] 单元测试覆盖 review/risky/超时/未知 suggest 全部失败关闭路径；
 - [ ] 频控触发时无微信/Halo 外部调用（mock 断言）。
+- [ ] 同一 OpenID 并发首次登录只创建一个 WeAppUser，资源/错误/日志无原始 OpenID；
+- [ ] 客户端 storage 扫描无 token、OpenID、identityKey、摘要或内部 readerName；
+- [ ] 退出后当前 token、注销后全部 token 立即失效，资源删除后二次查询失败；
+- [ ] config 公开响应不含 identityKey，所有新 feature 默认 false，缓存不能开启登录/写入；
+- [ ] Moment HTML、PHOTO/VIDEO/AUDIO/POST/未知媒体与相对 URL 降级测试通过。
