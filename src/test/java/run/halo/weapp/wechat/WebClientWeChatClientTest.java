@@ -71,9 +71,10 @@ class WebClientWeChatClientTest {
     @Test
     void code2SessionReturnsOpenId() {
         WebClientWeChatClient client =
-            client(req -> json("{\"openid\":\"ox-real\",\"session_key\":\"sk\"}"));
+            client(req -> json("{\"openid\":\"openid-test-placeholder\","
+                + "\"session_key\":\"session-key-test-placeholder\"}"));
         StepVerifier.create(client.code2Session("login-code"))
-            .expectNextMatches(result -> "ox-real".equals(result.openId()))
+            .expectNextMatches(result -> "openid-test-placeholder".equals(result.openId()))
             .verifyComplete();
     }
 

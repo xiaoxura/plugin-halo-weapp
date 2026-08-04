@@ -71,6 +71,9 @@ class WebClientHaloCommentGatewayTest {
             .verifyComplete();
         assertEquals("http://halo.local/apis/api.halo.run/v1alpha1/comments",
             capturedUri.get());
+        StepVerifier.create(gateway.createComment("../admin", "昵称", "内容"))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.VALIDATION_ERROR, t))
+            .verify();
     }
 
     @Test
@@ -94,6 +97,9 @@ class WebClientHaloCommentGatewayTest {
             .verify();
         assertEquals("http://halo.local/apis/api.halo.run/v1alpha1/comments/c-1/reply",
             capturedUri.get());
+        StepVerifier.create(gateway.createReply("../admin", "昵称", "内容", null))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.VALIDATION_ERROR, t))
+            .verify();
     }
 
     @Test

@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
@@ -38,6 +39,8 @@ public class IdentityKeyService {
     static final String PLUGIN_NAME_LABEL = "plugin.halo.run/plugin-name";
     private static final String RESOURCE_SUFFIX = "-identity";
     private static final int UPDATE_ATTEMPTS = 3;
+    private static final Pattern DNS1123_SUBDOMAIN = Pattern.compile(
+        "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$");
 
     private final ReactiveExtensionClient extensionClient;
     private final String resourceName;
@@ -49,17 +52,38 @@ public class IdentityKeyService {
     @Autowired
     public IdentityKeyService(ReactiveExtensionClient extensionClient,
                               PluginContext pluginContext) {
-        this(extensionClient, pluginContext.getName() + RESOURCE_SUFFIX,
-            pluginContext.getName(), new SecureRandom());
+        this(extensionClient, resourceNameFor(pluginContext == null ? null : pluginContext.getName()),
+            pluginNameOf(pluginContext), new SecureRandom());
     }
 
     /** 测试可见：注入 Secret/旧 ConfigMap 名称、插件名和随机源。 */
     IdentityKeyService(ReactiveExtensionClient extensionClient, String resourceName,
                        String pluginName, SecureRandom secureRandom) {
         this.extensionClient = extensionClient;
-        this.resourceName = resourceName;
+        this.resourceName = requireResourceName(resourceName);
         this.pluginName = pluginName;
         this.secureRandom = secureRandom;
+    }
+
+    private static String resourceNameFor(String pluginName) {
+        if (pluginName == null) {
+            throw unavailable();
+        }
+        return requireResourceName(pluginName + RESOURCE_SUFFIX);
+    }
+
+    private static String pluginNameOf(PluginContext pluginContext) {
+        if (pluginContext == null || pluginContext.getName() == null) {
+            throw unavailable();
+        }
+        return pluginContext.getName();
+    }
+
+    private static String requireResourceName(String value) {
+        if (value == null || value.length() > 253 || !DNS1123_SUBDOMAIN.matcher(value).matches()) {
+            throw unavailable();
+        }
+        return value;
     }
 
     /** 返回 key 的防御性副本；并发首次调用共享同一个初始化 Mono。 */

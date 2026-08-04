@@ -20,6 +20,9 @@ public class SettingsService {
     public static final int DEFAULT_MAX_LENGTH = 500;
     public static final int DEFAULT_RATE_PER_MINUTE = 3;
     public static final int DEFAULT_RATE_PER_HOUR = 20;
+    public static final int MAX_MAX_LENGTH = 500;
+    public static final int MAX_RATE_PER_MINUTE = 30;
+    public static final int MAX_RATE_PER_HOUR = 200;
     public static final String DEFAULT_BLOG_NAME = "我的博客";
     public static final String DEFAULT_BLOG_DESC = "记录技术 · 记录生活";
     public static final int DEFAULT_PAGE_SIZE = 10;
@@ -73,9 +76,11 @@ public class SettingsService {
             Boolean.TRUE.equals(raw.commentEnabled()),
             Boolean.TRUE.equals(raw.submitEnabled()),
             Boolean.TRUE.equals(raw.replyEnabled()),
-            positiveOrDefault(raw.maxLength(), DEFAULT_MAX_LENGTH),
-            positiveOrDefault(raw.rateLimitPerMinute(), DEFAULT_RATE_PER_MINUTE),
-            positiveOrDefault(raw.rateLimitPerHour(), DEFAULT_RATE_PER_HOUR));
+            boundedOrDefault(raw.maxLength(), 1, MAX_MAX_LENGTH, DEFAULT_MAX_LENGTH),
+            boundedOrDefault(raw.rateLimitPerMinute(), 1, MAX_RATE_PER_MINUTE,
+                DEFAULT_RATE_PER_MINUTE),
+            boundedOrDefault(raw.rateLimitPerHour(), 1, MAX_RATE_PER_HOUR,
+                DEFAULT_RATE_PER_HOUR));
     }
 
     /** 公告设置快照。 */
@@ -101,7 +106,7 @@ public class SettingsService {
         return new ClientConfig(
             raw.minVersion() == null || raw.minVersion().isBlank()
                 ? DEFAULT_MIN_VERSION : raw.minVersion(),
-            raw.privacyPolicyUrl() == null ? "" : raw.privacyPolicyUrl(),
+            httpsUrlOrEmpty(raw.privacyPolicyUrl()),
             raw.privacyPolicyVersion() == null ? "" : raw.privacyPolicyVersion(),
             timeout);
     }
@@ -114,10 +119,6 @@ public class SettingsService {
             log.warn("[weapp] settings group={} unreadable, falling back to defaults", group);
             return null;
         }
-    }
-
-    private static int positiveOrDefault(Integer value, int defaultValue) {
-        return value != null && value > 0 ? value : defaultValue;
     }
 
     private static int boundedOrDefault(Integer value, int min, int max, int defaultValue) {

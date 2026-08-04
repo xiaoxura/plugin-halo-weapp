@@ -2,11 +2,13 @@ package run.halo.weapp.comment;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import run.halo.app.core.extension.content.Comment;
 import run.halo.app.core.extension.content.Post;
 import run.halo.app.core.extension.content.Reply;
+import run.halo.app.extension.Extension;
 import run.halo.app.extension.ReactiveExtensionClient;
 import run.halo.app.extension.Ref;
 import run.halo.weapp.config.SettingsService;
@@ -36,6 +38,8 @@ public class CommentService {
     private static final Pattern SEMVER =
         Pattern.compile("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)"
             + "(-[0-9A-Za-z.-]+)?(\\+[0-9A-Za-z.-]+)?$");
+    private static final Pattern RESOURCE_NAME =
+        Pattern.compile("^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$");
 
     private final SettingsService settings;
     private final SessionService sessionService;
@@ -43,14 +47,17 @@ public class CommentService {
     private final IdempotencyService idempotencyService;
     private final WeChatClient weChatClient;
     private final HaloCommentGateway haloCommentGateway;
+    private final HaloMomentGateway haloMomentGateway;
     private final ReactiveExtensionClient extensionClient;
     private final MaskUtils maskUtils;
 
+    @Autowired
     public CommentService(SettingsService settings, SessionService sessionService,
                           RateLimitService rateLimitService,
                           IdempotencyService idempotencyService,
                           WeChatClient weChatClient,
                           HaloCommentGateway haloCommentGateway,
+                          HaloMomentGateway haloMomentGateway,
                           ReactiveExtensionClient extensionClient,
                           MaskUtils maskUtils) {
         this.settings = settings;
@@ -59,8 +66,24 @@ public class CommentService {
         this.idempotencyService = idempotencyService;
         this.weChatClient = weChatClient;
         this.haloCommentGateway = haloCommentGateway;
+        this.haloMomentGateway = haloMomentGateway;
         this.extensionClient = extensionClient;
         this.maskUtils = maskUtils;
+    }
+
+    /** Backward-compatible constructor for callers that only exercise Post comments. */
+    public CommentService(SettingsService settings, SessionService sessionService,
+                          RateLimitService rateLimitService,
+                          IdempotencyService idempotencyService,
+                          WeChatClient weChatClient,
+                          HaloCommentGateway haloCommentGateway,
+                          ReactiveExtensionClient extensionClient,
+                          MaskUtils maskUtils) {
+        this(settings, sessionService, rateLimitService, idempotencyService, weChatClient,
+            haloCommentGateway,
+            momentName -> Mono.error(new ApiException(ErrorCode.HALO_UNAVAILABLE,
+                "Moment 服务暂时不可用，请稍后重试")),
+            extensionClient, maskUtils);
     }
 
     /** 发表评论。 */
@@ -110,6 +133,55 @@ public class CommentService {
             }));
     }
 
+    /**
+     * 发表 Moment 评论。Moment 的可见性由 loopback Public API 校验，客户端不能传入 GVK。
+     */
+    public Mono<WriteResult> submitMomentComment(String sessionToken, String idempotencyKey,
+                                                  String clientVersion, String clientIp,
+                                                  MomentCommentCommand command) {
+        SettingsService.CommentConfig commentConfig = settings.comment();
+        if (!momentCommentsEnabled()) {
+            return Mono.error(new ApiException(ErrorCode.MOMENT_COMMENT_DISABLED,
+                "瞬间评论功能已关闭"));
+        }
+        if (!commentConfig.submitEnabled()) {
+            return Mono.error(new ApiException(ErrorCode.COMMENT_DISABLED, "评论功能已关闭"));
+        }
+        final String openId;
+        try {
+            openId = sessionService.validate(sessionToken);
+        } catch (ApiException e) {
+            return Mono.error(e);
+        }
+        SettingsService.ClientConfig clientConfig = settings.client();
+        ApiException validationError = validateBody(command.displayName(), command.content(),
+            command.privacyConsentVersion(), commentConfig.maxLength(), clientConfig);
+        if (validationError == null) {
+            validationError = validateResourceName(command.momentName(), "瞬间标识");
+        }
+        if (validationError == null) {
+            validationError = checkClientVersion(clientVersion, clientConfig.minVersion());
+        }
+        if (validationError != null) {
+            return Mono.error(validationError);
+        }
+        return haloMomentGateway.validateCommentable(command.momentName())
+            .then(Mono.defer(() -> {
+                String route = "POST /moments/" + command.momentName() + "/comments";
+                String userTag = maskUtils.userTag(openId);
+                String key = userTag + '|' + route + '|' + idempotencyKey;
+                String fingerprint = IdempotencyService.fingerprint(route,
+                    command.momentName(), command.displayName(), command.content(),
+                    command.privacyConsentVersion());
+                return idempotencyService.execute(key, fingerprint,
+                    Mono.defer(() -> checkedWrite(openId, clientIp, commentConfig,
+                        command.displayName().trim(), command.content(),
+                        escaped -> haloCommentGateway.createComment(
+                            CommentSubject.moment(command.momentName()),
+                            escaped.displayName(), escaped.content()))));
+            }));
+    }
+
     /** 回复评论。 */
     public Mono<WriteResult> submitReply(String sessionToken, String idempotencyKey,
                                          String clientVersion, String clientIp,
@@ -128,6 +200,13 @@ public class CommentService {
         ApiException validationError = validateBody(command.displayName(), command.content(),
             command.privacyConsentVersion(), commentConfig.maxLength(), clientConfig);
         if (validationError == null) {
+            validationError = validateResourceName(command.commentName(), "评论标识");
+        }
+        if (validationError == null && command.quoteReplyName() != null
+            && !command.quoteReplyName().isBlank()) {
+            validationError = validateResourceName(command.quoteReplyName(), "引用回复标识");
+        }
+        if (validationError == null) {
             validationError = checkClientVersion(clientVersion, clientConfig.minVersion());
         }
         if (validationError != null) {
@@ -135,7 +214,18 @@ public class CommentService {
         }
         // 2) 父评论存在且属于公开可评论文章
         return fetchParentComment(command.commentName())
-            .then(validateQuoteReply(command.commentName(), command.quoteReplyName()))
+            .flatMap(subject -> {
+                if (subject.isMoment() && !momentCommentsEnabled()) {
+                    return Mono.error(new ApiException(ErrorCode.MOMENT_COMMENT_DISABLED,
+                        "瞬间评论功能已关闭"));
+                }
+                Mono<Void> subjectValidation = subject.isMoment()
+                    ? haloMomentGateway.validateCommentable(subject.name())
+                    : Mono.empty();
+                return subjectValidation
+                    .then(validateQuoteReply(command.commentName(), command.quoteReplyName()))
+                    .thenReturn(subject);
+            })
             .then(Mono.defer(() -> {
                 String route = "POST /comments/" + command.commentName() + "/replies";
                 String userTag = maskUtils.userTag(openId);
@@ -183,10 +273,8 @@ public class CommentService {
 
     /** 校验文章存在、公开、未删除、已发布且允许评论。 */
     private Mono<Post> fetchCommentablePost(String postName) {
-        return extensionClient.fetch(Post.class, postName)
-            .onErrorResume(t -> Mono.empty())
-            .switchIfEmpty(Mono.error(
-                new ApiException(ErrorCode.POST_NOT_FOUND, "内容不存在或已删除")))
+        return fetchResource(Post.class, postName, ErrorCode.POST_NOT_FOUND,
+                "内容不存在或已删除")
             .flatMap(post -> {
                 Post.PostSpec spec = post.getSpec();
                 if (spec == null || Boolean.TRUE.equals(spec.getDeleted())
@@ -202,12 +290,10 @@ public class CommentService {
             });
     }
 
-    /** 校验父评论存在（未隐藏/删除），且其所属文章公开可评论。 */
-    private Mono<Void> fetchParentComment(String commentName) {
-        return extensionClient.fetch(Comment.class, commentName)
-            .onErrorResume(t -> Mono.empty())
-            .switchIfEmpty(Mono.error(
-                new ApiException(ErrorCode.COMMENT_NOT_FOUND, "评论不存在或已删除")))
+    /** 校验父评论存在（未隐藏/删除），且其所属 Post 或 Moment 公开可评论。 */
+    private Mono<CommentSubject> fetchParentComment(String commentName) {
+        return fetchResource(Comment.class, commentName, ErrorCode.COMMENT_NOT_FOUND,
+                "评论不存在或已删除")
             .flatMap(comment -> {
                 Comment.CommentSpec spec = comment.getSpec();
                 if (spec == null || Boolean.TRUE.equals(spec.getHidden())) {
@@ -215,13 +301,31 @@ public class CommentService {
                         new ApiException(ErrorCode.COMMENT_NOT_FOUND, "评论不存在或已删除"));
                 }
                 Ref subjectRef = spec.getSubjectRef();
-                if (subjectRef == null || !"Post".equals(subjectRef.getKind())
-                    || subjectRef.getName() == null) {
+                if (subjectRef == null || subjectRef.getName() == null
+                    || !RESOURCE_NAME.matcher(subjectRef.getName()).matches()) {
                     return Mono.error(
                         new ApiException(ErrorCode.COMMENT_NOT_ALLOWED, "该内容暂不支持评论"));
                 }
-                return fetchCommentablePost(subjectRef.getName()).then();
+                if ("content.halo.run".equals(subjectRef.getGroup())
+                    && "Post".equals(subjectRef.getKind())
+                    && "v1alpha1".equals(subjectRef.getVersion())) {
+                    return fetchCommentablePost(subjectRef.getName())
+                        .thenReturn(CommentSubject.post(subjectRef.getName()));
+                }
+                if ("moment.halo.run".equals(subjectRef.getGroup())
+                    && "Moment".equals(subjectRef.getKind())
+                    && "v1alpha1".equals(subjectRef.getVersion())) {
+                    return Mono.just(CommentSubject.moment(subjectRef.getName()));
+                }
+                return Mono.error(
+                    new ApiException(ErrorCode.COMMENT_NOT_ALLOWED, "该内容暂不支持评论"));
             });
+    }
+
+    private boolean momentCommentsEnabled() {
+        SettingsService.FeatureConfig features = settings.features();
+        return features != null && features.momentsEnabled()
+            && features.momentCommentEnabled();
     }
 
     /**
@@ -233,10 +337,8 @@ public class CommentService {
         if (quoteReplyName == null || quoteReplyName.isBlank()) {
             return Mono.empty();
         }
-        return extensionClient.fetch(Reply.class, quoteReplyName)
-            .onErrorResume(t -> Mono.empty())
-            .switchIfEmpty(Mono.error(
-                new ApiException(ErrorCode.COMMENT_NOT_FOUND, "评论不存在或已删除")))
+        return fetchResource(Reply.class, quoteReplyName, ErrorCode.COMMENT_NOT_FOUND,
+                "评论不存在或已删除")
             .flatMap(reply -> {
                 Reply.ReplySpec spec = reply.getSpec();
                 boolean valid = spec != null
@@ -249,6 +351,19 @@ public class CommentService {
                 }
                 return Mono.empty();
             });
+    }
+
+    /**
+     * 空结果代表资源不存在；扩展客户端的其他异常代表 Halo 不可用，不能伪装成 404。
+     * 已经分类的业务异常保持原样，交由统一错误处理器输出稳定契约。
+     */
+    private <T extends Extension> Mono<T> fetchResource(
+        Class<T> type, String name, ErrorCode notFoundCode, String notFoundMessage) {
+        return extensionClient.fetch(type, name)
+            .onErrorMap(error -> error instanceof ApiException
+                ? error
+                : new ApiException(ErrorCode.HALO_UNAVAILABLE, "服务暂时不可用，请稍后重试"))
+            .switchIfEmpty(Mono.error(new ApiException(notFoundCode, notFoundMessage)));
     }
 
     private static ApiException validateBody(String displayName, String content,
@@ -268,23 +383,30 @@ public class CommentService {
         }
         if (privacyConsentVersion == null
             || !privacyConsentVersion.equals(clientConfig.privacyPolicyVersion())) {
-            return new ApiException(ErrorCode.VALIDATION_ERROR, "请先阅读并同意隐私政策");
+            return new ApiException(ErrorCode.PRIVACY_CONSENT_REQUIRED, "请先阅读并同意隐私政策");
         }
         return null;
     }
 
     private static ApiException validatePostName(String postName) {
-        if (postName == null || postName.isBlank() || postName.length() > 128) {
-            return new ApiException(ErrorCode.VALIDATION_ERROR, "文章标识不合法");
+        return validateResourceName(postName, "文章标识");
+    }
+
+    private static ApiException validateResourceName(String value, String label) {
+        if (value == null || !RESOURCE_NAME.matcher(value).matches()) {
+            return new ApiException(ErrorCode.VALIDATION_ERROR, label + "不合法");
         }
         return null;
     }
 
-    /** 客户端版本低于 minVersion 时拒绝写入；缺失或非法版本号忽略该检查。 */
+    /** 客户端版本低于 minVersion 时拒绝写入；非法配置版本直接关闭写入。 */
     private static ApiException checkClientVersion(String clientVersion, String minVersion) {
         int[] client = parseSemver(clientVersion);
         int[] minimum = parseSemver(minVersion);
-        if (client == null || minimum == null) {
+        if (minimum == null) {
+            return new ApiException(ErrorCode.CLIENT_UPDATE_REQUIRED, "服务端版本门槛配置无效");
+        }
+        if (client == null) {
             return null;
         }
         for (int i = 0; i < 3; i++) {
@@ -328,6 +450,11 @@ public class CommentService {
     /** 评论命令（对应 CommentCreateRequest）。 */
     public record CommentCommand(String postName, String displayName, String content,
                                  String privacyConsentVersion) {
+    }
+
+    /** Moment 评论命令；主体只来自受控路由 path。 */
+    public record MomentCommentCommand(String momentName, String displayName, String content,
+                                       String privacyConsentVersion) {
     }
 
     /** 回复命令（对应 ReplyCreateRequest）。 */

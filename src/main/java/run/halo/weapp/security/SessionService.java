@@ -56,6 +56,7 @@ public class SessionService {
     }
 
     private String createSession(SessionPrincipal principal) {
+        purgeExpiredSessions();
         String token;
         do {
             byte[] bytes = new byte[TOKEN_BYTES];
@@ -64,6 +65,17 @@ public class SessionService {
         } while (sessions.putIfAbsent(token,
             new Session(principal, clock.instant().plus(ttl))) != null);
         return token;
+    }
+
+    /** 新登录会触发一次全量惰性清理，避免过期会话只在同一 token 被访问时才释放。 */
+    private void purgeExpiredSessions() {
+        Instant now = clock.instant();
+        for (Map.Entry<String, Session> entry : sessions.entrySet()) {
+            Session session = entry.getValue();
+            if (!session.expiresAt().isAfter(now)) {
+                sessions.remove(entry.getKey(), session);
+            }
+        }
     }
 
     /**

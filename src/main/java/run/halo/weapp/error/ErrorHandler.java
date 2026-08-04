@@ -3,13 +3,14 @@ package run.halo.weapp.error;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.codec.DecodingException;
 import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Mono;
 
 /**
  * 统一错误处理工具：每个请求生成 requestId，业务异常按错误码映射 HTTP 状态；
- * 未知异常一律映射为 500/HALO_UNAVAILABLE 同款结构，不向外暴露内部细节。
+ * 未知异常一律映射为 503/HALO_UNAVAILABLE，不向外暴露内部细节。
  */
 public final class ErrorHandler {
 
@@ -25,6 +26,9 @@ public final class ErrorHandler {
 
     /** 将任意异常转换为统一错误响应。 */
     public static Mono<ServerResponse> respond(Throwable t, String requestId) {
+        if (isDecodingFailure(t)) {
+            return respond(new ApiException(ErrorCode.VALIDATION_ERROR, "请求体格式无效"), requestId);
+        }
         if (t instanceof ApiException apiException) {
             if (apiException.code().httpStatus() >= 500) {
                 log.warn("[weapp] requestId={} upstream error code={}", requestId,
@@ -40,8 +44,19 @@ public final class ErrorHandler {
             t == null ? "unknown" : t.getClass().getSimpleName());
         var body = new ErrorResponse(ErrorCode.HALO_UNAVAILABLE.name(),
             "服务暂时不可用，请稍后重试", requestId, null);
-        return ServerResponse.status(500)
+        return ServerResponse.status(503)
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(body);
+    }
+
+    private static boolean isDecodingFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof DecodingException) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 }

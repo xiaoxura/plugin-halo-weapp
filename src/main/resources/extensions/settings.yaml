@@ -58,7 +58,7 @@ spec:
         - $formkit: select
           name: momentCommentEnabled
           label: 瞬间评论展示
-          help: v0.4.1 预留开关；v0.4.0 客户端不会开放瞬间评论写入
+          help: v0.4.1 P1 开关；默认关闭，v0.4.0 生产不会启用瞬间评论写入
           options:
             - label: 开启
               value: true

@@ -128,6 +128,16 @@ paths:
                 code: WECHAT_UNAVAILABLE
                 message: 登录服务暂时不可用，请稍后重试
                 requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+        '503':
+          description: 插件未配置微信凭据或 Halo 依赖暂时不可用
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: HALO_UNAVAILABLE
+                message: 服务暂时不可用，请稍后重试
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
   /auth/login:
     post:
       tags: [auth]
@@ -221,14 +231,14 @@ paths:
                 $ref: '#/components/schemas/ReaderProfile'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '428':
+          $ref: '#/components/responses/PrivacyConsentRequired'
         '401':
           $ref: '#/components/responses/SessionError'
         '403':
           $ref: '#/components/responses/ReaderAccountDisabled'
         '404':
           $ref: '#/components/responses/ReaderNotFound'
-        '428':
-          $ref: '#/components/responses/PrivacyConsentRequired'
         '429':
           $ref: '#/components/responses/RateLimited'
         '422':
@@ -313,6 +323,8 @@ paths:
                 $ref: '#/components/schemas/CommentCreateResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '428':
+          $ref: '#/components/responses/PrivacyConsentRequired'
         '401':
           $ref: '#/components/responses/SessionError'
         '403':
@@ -347,6 +359,79 @@ paths:
           $ref: '#/components/responses/BadGateway'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
+  /moments/{momentName}/comments:
+    post:
+      tags: [comment]
+      operationId: createMomentComment
+      summary: 发表 Moment 评论
+      security:
+        - WeAppSession: []
+      description: >
+        `momentName` 只来自受控路径；服务端通过 Moment Public API 固定校验
+        `moment.halo.run/Moment/v1alpha1` 主体存在、公开、已审核且未删除，客户端不能传入任意 GVK。
+        其余校验顺序、频控、幂等、`msgSecCheck` 和审核状态映射与文章评论一致。
+      parameters:
+        - name: momentName
+          in: path
+          required: true
+          description: Moment 的 metadata.name
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$'
+        - $ref: '#/components/parameters/SessionHeader'
+        - $ref: '#/components/parameters/IdempotencyHeader'
+        - $ref: '#/components/parameters/ClientVersionHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MomentCommentCreateRequest'
+      responses:
+        '200':
+          description: 评论已受理（published 或 pending）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentCreateResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '428':
+          $ref: '#/components/responses/PrivacyConsentRequired'
+        '401':
+          $ref: '#/components/responses/SessionError'
+        '403':
+          description: Moment 评论或全局评论写入口已关闭
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: MOMENT_COMMENT_DISABLED
+                message: 瞬间评论功能已关闭
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+        '404':
+          description: Moment 不存在、私有、未审核或已删除
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: MOMENT_NOT_FOUND
+                message: 瞬间不存在或已删除
+                requestId: req_01J8ZK3V8N0A2C4E6G8J0M2P4R
+        '409':
+          $ref: '#/components/responses/ConflictError'
+        '422':
+          $ref: '#/components/responses/ContentReviewError'
+        '426':
+          $ref: '#/components/responses/ClientUpdateRequired'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
   /comments/{commentName}/replies:
     post:
       tags: [comment]
@@ -356,7 +441,7 @@ paths:
         - WeAppSession: []
       description: >
         正文规则与评论一致。`quoteReplyName` 可选，只能引用当前评论下已公开的回复。
-        服务端校验父评论存在且属于公开文章；同样执行频控、幂等和 `msgSecCheck`。
+        服务端校验父评论存在且属于公开文章或公开 Moment；同样执行频控、幂等和 `msgSecCheck`。
       parameters:
         - name: commentName
           in: path
@@ -364,6 +449,7 @@ paths:
           description: 父评论的 metadata.name
           schema:
             type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$'
         - $ref: '#/components/parameters/SessionHeader'
         - $ref: '#/components/parameters/IdempotencyHeader'
         - $ref: '#/components/parameters/ClientVersionHeader'
@@ -382,6 +468,8 @@ paths:
                 $ref: '#/components/schemas/ReplyCreateResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
+        '428':
+          $ref: '#/components/responses/PrivacyConsentRequired'
         '401':
           $ref: '#/components/responses/SessionError'
         '403':
@@ -531,7 +619,7 @@ components:
                 commentEnabled:
                   type: boolean
                   default: false
-                  description: v0.4.1 预留的 Moment 评论展示开关；v0.4.0 不提供写入 UI
+                  description: v0.4.1 的 Moment 评论开关；v0.4.0 生产默认关闭，启用前需完成外部门禁
             readerAccount:
               type: object
               required: [enabled]
@@ -556,6 +644,8 @@ components:
             maxLength:
               type: integer
               description: 评论正文最大长度（Unicode 字符数），服务端再次校验
+              minimum: 1
+              maximum: 500
               example: 500
             nicknameRequired:
               type: boolean
@@ -573,7 +663,7 @@ components:
               type: string
         minVersion:
           type: string
-          description: 小程序最低版本（SemVer）；非法版本字符串客户端忽略
+          description: 小程序最低版本（SemVer）；非法版本字符串会关闭客户端写能力
           example: 0.3.0
         privacyPolicyUrl:
           type: string
@@ -668,6 +758,25 @@ components:
           description: 文章的 metadata.name
           minLength: 1
           maxLength: 128
+          pattern: '^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$'
+        displayName:
+          type: string
+          description: 访客昵称，2～20 个 Unicode 字符
+          minLength: 2
+          maxLength: 20
+        content:
+          type: string
+          description: 纯文本评论，1～500 个 Unicode 字符（以服务端配置 maxLength 为准）
+          minLength: 1
+          maxLength: 500
+        privacyConsentVersion:
+          type: string
+          description: 用户已同意的隐私政策版本，必须与当前配置一致
+    MomentCommentCreateRequest:
+      type: object
+      required: [displayName, content, privacyConsentVersion]
+      description: momentName 来自受控路径，客户端不能提交 subjectRef 或任意 GVK
+      properties:
         displayName:
           type: string
           description: 访客昵称，2～20 个 Unicode 字符
@@ -698,6 +807,8 @@ components:
         quoteReplyName:
           type: string
           description: 可选；只能引用当前评论下已公开的回复
+          maxLength: 128
+          pattern: '^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$'
     CommentCreateResponse:
       type: object
       required: [requestId, status, commentName]
@@ -736,9 +847,11 @@ components:
             - READER_ACCOUNT_DISABLED
             - READER_NOT_FOUND
             - PRIVACY_CONSENT_REQUIRED
+            - MOMENT_COMMENT_DISABLED
             - COMMENT_DISABLED
             - REPLY_DISABLED
             - POST_NOT_FOUND
+            - MOMENT_NOT_FOUND
             - COMMENT_NOT_FOUND
             - COMMENT_NOT_ALLOWED
             - IDEMPOTENCY_CONFLICT
@@ -756,7 +869,8 @@ components:
           description: 排查用请求 ID
         retryAfter:
           type: integer
-          description: 仅 RATE_LIMITED 时存在；可重试等待秒数
+          minimum: 1
+          description: 仅 RATE_LIMITED 时存在；可重试等待秒数（至少 1 秒）
   responses:
     ValidationError:
       description: 请求参数不合法（客户端标记字段并保留表单）

@@ -191,7 +191,8 @@ v0.2.0 的 identity Secret 仅在首次实际使用读者身份时按需生成�
 3. 在开启合法域名校验的 iOS/Android 真机验证首页 3 条、列表、详情、深链和
    PHOTO/VIDEO/AUDIO/POST/未知媒体；
 4. 开启 `momentsEnabled`，观察 API 延迟、媒体失败率和文章首屏；
-5. `momentCommentEnabled` 保持关闭，v0.4.0 不支持 Moment 评论写入。
+5. `momentCommentEnabled` 保持关闭；Moment 评论写入契约虽已实现，但 v0.4.0 生产默认不开放，
+   必须完成 v0.4.1 的真机、审核和目标环境门禁后再启用。
 
 ### 阶段 D：微信读者身份
 

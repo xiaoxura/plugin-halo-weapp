@@ -32,7 +32,7 @@ import run.halo.weapp.wechat.WeChatClient;
 
 class AuthServiceTest {
 
-    private static final String OPEN_ID = "openid-sensitive-value";
+    private static final String OPEN_ID = "openid-test-placeholder";
     private static final String READER =
         "reader-0123456789abcdef0123456789abcdef01234567";
     private static final String PRIVACY = "2026-08-01";
@@ -189,6 +189,20 @@ class AuthServiceTest {
     }
 
     @Test
+    void profileUpdateValidatesSessionBeforeReaderWriteConfiguration() {
+        when(settings.features()).thenReturn(new SettingsService.FeatureConfig(false, false, false));
+        expectCode(service.updateProfile("invalid-token",
+            new AuthService.UpdateCommand("新昵称", "stale"), "0.3.0", null),
+            ErrorCode.SESSION_EXPIRED);
+
+        when(settings.features()).thenReturn(new SettingsService.FeatureConfig(false, false, true));
+        String temporaryToken = sessions.create(OPEN_ID);
+        expectCode(service.updateProfile(temporaryToken,
+            new AuthService.UpdateCommand("新昵称", "stale"), "0.3.0", null),
+            ErrorCode.SESSION_REQUIRED);
+    }
+
+    @Test
     void profileUpdateDoesNotMaskStorageFailureWhenOnlyConsentAlreadyMatches() {
         WeAppUser fetched = user(READER, "旧昵称", PRIVACY);
         WeAppUser latest = user(READER, "旧昵称", PRIVACY);
@@ -257,6 +271,20 @@ class AuthServiceTest {
         expectCode(Mono.fromCallable(() -> sessions.validate(second)), ErrorCode.SESSION_EXPIRED);
         // 注销只删除一个 WeAppUser；服务没有任何 Comment/Reply 删除依赖。
         assertEquals(1, deleteCalls.get());
+    }
+
+    @Test
+    void deleteFailureStillRevokesAllDeviceSessions() {
+        users.put(READER, user(READER, "读者昵称", PRIVACY));
+        String first = sessions.createAccount(OPEN_ID, READER);
+        String second = sessions.createAccount(OPEN_ID, READER);
+        when(extensionClient.delete(any(WeAppUser.class)))
+            .thenReturn(Mono.error(new IllegalStateException("storage unavailable")));
+
+        expectCode(service.deleteAccount(first), ErrorCode.HALO_UNAVAILABLE);
+        expectCode(Mono.fromCallable(() -> sessions.validate(first)), ErrorCode.SESSION_EXPIRED);
+        expectCode(Mono.fromCallable(() -> sessions.validate(second)), ErrorCode.SESSION_EXPIRED);
+        assertTrue(users.containsKey(READER));
     }
 
     @Test

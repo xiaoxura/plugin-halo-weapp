@@ -71,6 +71,8 @@ public class AuthService {
     public Mono<ReaderProfile> updateProfile(String sessionToken, UpdateCommand command,
                                              String clientVersion, String clientIp) {
         return Mono.defer(() -> {
+            SessionService.SessionPrincipal principal =
+                sessionService.validateAccount(sessionToken);
             ReaderConfig config = requireReaderWrite(command == null
                 ? null : command.privacyConsentVersion(), clientVersion);
             if (command == null) {
@@ -79,8 +81,6 @@ public class AuthService {
             ApiException invalidName = validateDisplayName(command.displayName());
             if (invalidName != null) return Mono.error(invalidName);
             String displayName = command.displayName().trim();
-            SessionService.SessionPrincipal principal =
-                sessionService.validateAccount(sessionToken);
             SettingsService.CommentConfig limits = settings.comment();
             rateLimitService.checkUser("reader-profile:" + principal.readerName(), limits);
             rateLimitService.checkIp(clientIp);
@@ -126,7 +126,9 @@ public class AuthService {
                 }))
                 .flatMap(extensionClient::delete)
                 .onErrorMap(t -> !(t instanceof ApiException), t -> storageUnavailable())
-                .then(Mono.fromRunnable(() -> sessionService.revokeAllByReaderName(readerName)));
+                // 删除失败也撤销全部会话：账号资源可能仍存在，但旧 token 不得继续使用。
+                .doFinally(signal -> sessionService.revokeAllByReaderName(readerName))
+                .then();
         });
     }
 

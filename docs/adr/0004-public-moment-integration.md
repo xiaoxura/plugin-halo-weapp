@@ -47,8 +47,8 @@ PHOTO / VIDEO / AUDIO / POST 多类媒体，且插件可能未安装、停用、
   对应详情路由；
 - tracker 点赞参数由受控 subject 描述生成：Post 使用 `content.halo.run/posts`，Moment 使用
   `moment.halo.run/moments`；本地状态使用 `post:<name>` / `moment:<name>` 命名空间；
-- Moment 评论不属于 v0.4.0。`features.moments.commentEnabled` 仅为 v0.4.1 预留且默认 false；
-  后续必须使用服务端固定 Moment GVK 的独立路由，客户端永远不能上传任意 subjectRef。
+- Moment 评论不作为 v0.4.0 的默认生产能力。v0.4.1 P1 已按 ADR-0005 实现固定主体独立路由，
+  `features.moments.commentEnabled` 默认 false；客户端永远不能上传任意 subjectRef。
 
 ## 后果
 

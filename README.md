@@ -19,7 +19,8 @@
 - **可选 Moment 能力配置**：只下发公开读取意图；Moment 数据由客户端固定访问
   `PluginMoments >= 1.15.0` 的匿名 Public API，本插件不代理私有内容。
 
-v0.2.0 不实现 Moment 评论写入。`momentCommentEnabled` 仅为 v0.4.1 预留且默认关闭。
+v0.2.0 已实现 v0.4.1 P1 Moment 评论写入契约，但 `momentCommentEnabled` 默认关闭；v0.4.0
+生产仍不开放该写入口，必须完成真机、审核和目标环境门禁后再启用。
 
 ## 身份与安全边界
 
@@ -91,6 +92,9 @@ iOS 与 Android 真机验证。
 # 默认以最低 API 2.23.0 构建正式兼容产物
 ./gradlew clean build -PhaloApiVersion=2.23.0
 
+# 最低 API 测试（Halo 2.23.x 兼容基线）
+./gradlew clean test -PhaloApiVersion=2.23.0
+
 # 较新 API 编译/测试矩阵（Halo 2.25.4 runtime 对应已发布 API platform 2.25.0）
 ./gradlew clean test -PhaloApiVersion=2.25.0
 
@@ -98,9 +102,13 @@ iOS 与 Android 真机验证。
 ./gradlew haloServer -PhaloDevVersion=2.25.4
 ```
 
-v0.2.0 RC 当前有 106 项 Java 自动化测试，覆盖配置门禁、插件资源布局、Spring 构造器选择、
+v0.2.0 RC 当前有 143 项 Java 自动化测试，覆盖配置门禁、插件资源布局、Spring 构造器选择、
 匿名 RBAC、匿名/账号会话、内容安全、频控、幂等、读者身份 HMAC、并发首次创建、identityKey
 Secret 初始化、旧 ConfigMap 安全迁移、损坏/丢失、资料修改、退出和注销。
+
+Moment 评论属于 v0.4.1 P1，使用 OpenAPI 中固定的
+`/moments/{momentName}/comments` 路由。服务端只接受公开、已审核 Moment 的固定
+`moment.halo.run/Moment/v1alpha1` subjectRef；默认开关关闭，不能通过客户端提交任意 GVK。
 
 ### Halo 平台依赖审计
 

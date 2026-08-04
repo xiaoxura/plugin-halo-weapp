@@ -10,6 +10,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record ErrorResponse(String code, String message, String requestId, Integer retryAfter) {
 
     public static ErrorResponse of(ApiException e, String requestId) {
-        return new ErrorResponse(e.code().name(), e.getMessage(), requestId, e.retryAfter());
+        Integer retryAfter = e.code() == ErrorCode.RATE_LIMITED ? e.retryAfter() : null;
+        return new ErrorResponse(e.code().name(), e.getMessage(), requestId, retryAfter);
     }
 }

@@ -17,7 +17,8 @@ import run.halo.weapp.error.ErrorCode;
 import run.halo.weapp.error.ErrorHandler;
 
 /**
- * POST /comments、POST /comments/{commentName}/replies：安全评论/回复写入。
+ * POST /comments、POST /moments/{momentName}/comments、
+ * POST /comments/{commentName}/replies：安全评论/回复写入。
  */
 @Component
 public class CommentEndpoint implements CustomEndpoint {
@@ -35,6 +36,9 @@ public class CommentEndpoint implements CustomEndpoint {
     @Override
     public RouterFunction<ServerResponse> endpoint() {
         return RouterFunctions.route()
+            .POST("/moments/{momentName}/comments",
+                RequestPredicates.contentType(MediaType.APPLICATION_JSON),
+                this::createMomentComment)
             .POST("/comments",
                 RequestPredicates.contentType(MediaType.APPLICATION_JSON),
                 this::createComment)
@@ -42,6 +46,22 @@ public class CommentEndpoint implements CustomEndpoint {
                 RequestPredicates.contentType(MediaType.APPLICATION_JSON),
                 this::createReply)
             .build();
+    }
+
+    private Mono<ServerResponse> createMomentComment(ServerRequest request) {
+        String requestId = ErrorHandler.newRequestId();
+        String momentName = request.pathVariable("momentName");
+        return request.bodyToMono(CommentCreateRequest.class)
+            .switchIfEmpty(Mono.error(
+                new ApiException(ErrorCode.VALIDATION_ERROR, "请求体不能为空")))
+            .flatMap(body -> commentService.submitMomentComment(
+                    sessionToken(request), idempotencyKey(request), clientVersion(request),
+                    clientIp(request),
+                    new CommentService.MomentCommentCommand(momentName, body.displayName(),
+                        body.content(), body.privacyConsentVersion())))
+            .map(result -> new CommentCreateResponse(requestId, result.status(), result.name()))
+            .flatMap(response -> ServerResponse.ok().bodyValue(response))
+            .onErrorResume(t -> ErrorHandler.respond(t, requestId));
     }
 
     private Mono<ServerResponse> createComment(ServerRequest request) {

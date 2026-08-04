@@ -25,6 +25,8 @@
   API 2.23.0 构建
 - 可复现的 Halo 平台依赖审计脚本：分别解析 Gradle compileClasspath 与官方宿主镜像 runtime
   jar，记录镜像 digest、完整坐标覆盖和 OSV 命中，并支持 findings 门禁退出码
+- v0.4.1 P1 Moment 评论写入契约：固定 `/moments/{momentName}/comments` 路由、Public API
+  公开/审核校验、Moment subjectRef 白名单，以及 Post/Moment 父评论回复复验；默认远程关闭
 
 ### 变更
 
@@ -36,6 +38,15 @@
   新增资源布局回归测试，禁止只在 jar 根目录保留 `settings.yaml`
 - 对存在测试构造器的 Spring 组件显式选择生产注入构造器，避免真实 Halo 启动时因多构造器而
   无法创建 Bean
+- 评论/回复资源名统一限制为安全的 Halo metadata.name；网关拒绝路径逃逸输入并保持固定
+  `HALO_UNAVAILABLE` 错误契约
+- 错误响应仅在 `RATE_LIMITED` 时返回 `retryAfter`；Identity Secret 派生资源名统一执行
+  DNS-1123 校验，非法插件名/注入名失败关闭
+- `/session` OpenAPI 补齐未配置微信凭据时的 503 `HALO_UNAVAILABLE`；JSON 解码失败统一返回
+  400 `VALIDATION_ERROR`，并新增端点级敏感字段/错误契约测试
+- 评论、Moment 评论和回复在隐私版本缺失或过期时统一返回 428 `PRIVACY_CONSENT_REQUIRED`，
+  并在 OpenAPI 写路由中声明该响应
+- Moment 评论的可选插件异常映射为 `MOMENT_NOT_FOUND` 或 `HALO_UNAVAILABLE`，不影响文章评论
 
 ### 安全
 
@@ -55,10 +66,12 @@
   二次确认统一说明
 - 匿名角色按 Halo `RequestInfoFactory` 的 resource/resourceName/nonResourceURL 语义最小授权；
   `/auth/login`、资料、退出、注销和评论回复不再被 Halo Security 重定向到 Console 登录页
+- 公开配置的隐私 URL 仅允许 HTTPS；评论长度限制为 1～500，频控限制为每分钟 1～30、
+  每小时 1～200；未知异常返回 HTTP 503 而非 500
 
 ### 验证
 
-- 106 项 Java 自动化测试在 Halo plugin API platform 2.23.0 与 2.25.0 均通过
+- 143 项 Java 自动化测试在 Halo plugin API platform 2.23.0 与 2.25.0 均通过
 - `./gradlew clean build -PhaloApiVersion=2.23.0` 作为最终兼容产物门禁；OpenAPI 重复键、
   资源默认开关和敏感值扫描纳入 RC 清单
 - Halo 2.23.3 与 2.25.4 隔离 H2 运行时均已验证 Setting/ConfigMap 初始化、插件冷启动、公开

@@ -68,7 +68,7 @@ class SettingsServiceTest {
     @Test
     void fallsBackPerFieldWhenFieldsAreNull() {
         when(fetcher.fetch("comment", CommentSettings.class)).thenReturn(Optional.of(
-            new CommentSettings(true, true, null, null, -1, null)));
+            new CommentSettings(true, true, null, 501, 31, 201)));
         when(fetcher.fetch("site", SiteSettings.class)).thenReturn(Optional.of(
             new SiteSettings(" ", null, 101, "http://unsafe.example/font.woff2")));
         when(fetcher.fetch("features", FeatureSettings.class)).thenReturn(Optional.of(
@@ -79,6 +79,18 @@ class SettingsServiceTest {
         assertFalse(comment.replyEnabled());
         assertEquals(500, comment.maxLength());
         assertEquals(3, comment.rateLimitPerMinute());
+        assertEquals(20, comment.rateLimitPerHour());
+
+        when(fetcher.fetch("comment", CommentSettings.class)).thenReturn(Optional.of(
+            new CommentSettings(true, true, true, 0, 0, 0)));
+        SettingsService.CommentConfig nonPositive = settings.comment();
+        assertEquals(500, nonPositive.maxLength());
+        assertEquals(3, nonPositive.rateLimitPerMinute());
+        assertEquals(20, nonPositive.rateLimitPerHour());
+
+        when(fetcher.fetch("client", ClientSettings.class)).thenReturn(Optional.of(
+            new ClientSettings("0.4.0", "http://unsafe.example/privacy", "v1", 5000L)));
+        assertEquals("", settings.client().privacyPolicyUrl());
         SettingsService.SiteConfig site = settings.site();
         assertEquals("我的博客", site.blogName());
         assertEquals("记录技术 · 记录生活", site.blogDesc());

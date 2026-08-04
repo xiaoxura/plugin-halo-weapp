@@ -54,6 +54,18 @@ class SessionServiceTest {
     }
 
     @Test
+    void creatingNewSessionPurgesExpiredSessionsBeforeAdding() {
+        MutableClock clock = new MutableClock(Instant.now());
+        SessionService service = new SessionService(clock, Duration.ofSeconds(1));
+        service.createAccount("openid-old", "reader-old");
+        clock.advance(Duration.ofSeconds(1));
+
+        service.create("openid-new");
+
+        assertEquals(0, service.revokeAllByReaderName("reader-old"));
+    }
+
+    @Test
     void unknownTokenYieldsSessionExpired() {
         SessionService service = new SessionService();
         ApiException e = assertThrows(ApiException.class,

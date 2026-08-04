@@ -34,6 +34,7 @@ class CommentServiceTest {
     private ReactiveExtensionClient extensionClient;
     private FakeWeChatClient weChatClient;
     private FakeGateway gateway;
+    private FakeMomentGateway momentGateway;
     private CommentService commentService;
     private String sessionToken;
     private SessionService sessionService;
@@ -47,10 +48,11 @@ class CommentServiceTest {
         extensionClient = mock(ReactiveExtensionClient.class);
         weChatClient = new FakeWeChatClient();
         gateway = new FakeGateway();
+        momentGateway = new FakeMomentGateway();
         sessionService = new SessionService();
         sessionToken = sessionService.create(OPEN_ID);
         commentService = new CommentService(settings, sessionService, new RateLimitService(),
-            new IdempotencyService(), weChatClient, gateway, extensionClient,
+            new IdempotencyService(), weChatClient, gateway, momentGateway, extensionClient,
             new MaskUtils());
         enableAll();
     }
@@ -60,6 +62,11 @@ class CommentServiceTest {
             new SettingsService.CommentConfig(true, true, true, 500, 100, 1000));
         when(settings.client()).thenReturn(
             new SettingsService.ClientConfig("0.3.0", "https://example.com/p", "v1", 5000L));
+    }
+
+    private void enableMomentComments() {
+        when(settings.features()).thenReturn(
+            new SettingsService.FeatureConfig(true, true, true));
     }
 
     private CommentService.CommentCommand command() {
@@ -153,6 +160,18 @@ class CommentServiceTest {
                 .expectErrorSatisfies(t -> expectError(ErrorCode.VALIDATION_ERROR, t))
                 .verify();
         }
+        StepVerifier.create(commentService.submitComment(sessionToken, IDEM_KEY + "-path", null, null,
+                new CommentService.CommentCommand("../post", "访客昵称", "正文", "v1")))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.VALIDATION_ERROR, t))
+            .verify();
+        StepVerifier.create(commentService.submitReply(sessionToken, IDEM_KEY + "-reply-path", null, null,
+                new CommentService.ReplyCommand("../comment", "访客昵称", "正文", "v1", "r-1")))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.VALIDATION_ERROR, t))
+            .verify();
+        StepVerifier.create(commentService.submitReply(sessionToken, IDEM_KEY + "-quote-path", null, null,
+                new CommentService.ReplyCommand("comment-1", "访客昵称", "正文", "v1", "../reply")))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.VALIDATION_ERROR, t))
+            .verify();
         assertEquals(0, weChatClient.secCheckCalls);
         assertEquals(0, gateway.calls);
     }
@@ -185,7 +204,7 @@ class CommentServiceTest {
         givenCommentablePost();
         StepVerifier.create(commentService.submitComment(sessionToken, IDEM_KEY, null, null,
                 new CommentService.CommentCommand("post-1", "访客昵称", "正文", "old-version")))
-            .expectErrorSatisfies(t -> expectError(ErrorCode.VALIDATION_ERROR, t))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.PRIVACY_CONSENT_REQUIRED, t))
             .verify();
         assertEquals(0, gateway.calls);
     }
@@ -197,6 +216,17 @@ class CommentServiceTest {
         when(extensionClient.fetch(Post.class, "post-1")).thenReturn(Mono.empty());
         StepVerifier.create(submit())
             .expectErrorSatisfies(t -> expectError(ErrorCode.POST_NOT_FOUND, t))
+            .verify();
+        assertEquals(0, weChatClient.secCheckCalls);
+        assertEquals(0, gateway.calls);
+    }
+
+    @Test
+    void postLookupFailureYieldsHaloUnavailableInsteadOfPostNotFound() {
+        when(extensionClient.fetch(Post.class, "post-1"))
+            .thenReturn(Mono.error(new IllegalStateException("storage unavailable")));
+        StepVerifier.create(submit())
+            .expectErrorSatisfies(t -> expectError(ErrorCode.HALO_UNAVAILABLE, t))
             .verify();
         assertEquals(0, weChatClient.secCheckCalls);
         assertEquals(0, gateway.calls);
@@ -227,6 +257,48 @@ class CommentServiceTest {
         StepVerifier.create(submit())
             .expectErrorSatisfies(t -> expectError(ErrorCode.COMMENT_NOT_ALLOWED, t))
             .verify();
+        assertEquals(0, gateway.calls);
+    }
+
+    // ---------- Moment 评论主体 ----------
+
+    @Test
+    void momentCommentRequiresBothMomentFeatureSwitches() {
+        when(settings.features()).thenReturn(
+            new SettingsService.FeatureConfig(true, false, true));
+        StepVerifier.create(commentService.submitMomentComment(sessionToken, IDEM_KEY, null, null,
+                new CommentService.MomentCommentCommand("moment-1", "访客昵称", "正文", "v1")))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.MOMENT_COMMENT_DISABLED, t))
+            .verify();
+        assertEquals(0, momentGateway.calls);
+        assertEquals(0, gateway.calls);
+    }
+
+    @Test
+    void momentCommentUsesFixedSubjectAndPublicValidator() {
+        enableMomentComments();
+        StepVerifier.create(commentService.submitMomentComment(sessionToken, IDEM_KEY, null, null,
+                new CommentService.MomentCommentCommand("moment-1", "访客昵称", "正文", "v1")))
+            .expectNextMatches(result -> "published".equals(result.status()))
+            .verifyComplete();
+        assertEquals(1, momentGateway.calls);
+        assertEquals(1, gateway.calls);
+        assertEquals("moment.halo.run", gateway.lastSubject.group());
+        assertEquals("Moment", gateway.lastSubject.kind());
+        assertEquals("v1alpha1", gateway.lastSubject.version());
+        assertEquals("moment-1", gateway.lastSubject.name());
+    }
+
+    @Test
+    void momentCommentPropagatesNotFoundWithoutSecurityCheckOrWrite() {
+        enableMomentComments();
+        momentGateway.error = new ApiException(ErrorCode.MOMENT_NOT_FOUND,
+            "瞬间不存在或已删除");
+        StepVerifier.create(commentService.submitMomentComment(sessionToken, IDEM_KEY, null, null,
+                new CommentService.MomentCommentCommand("moment-1", "访客昵称", "正文", "v1")))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.MOMENT_NOT_FOUND, t))
+            .verify();
+        assertEquals(0, weChatClient.secCheckCalls);
         assertEquals(0, gateway.calls);
     }
 
@@ -387,11 +459,56 @@ class CommentServiceTest {
     }
 
     @Test
+    void replyToMomentParentUsesMomentValidatorAndCanWrite() {
+        enableMomentComments();
+        Comment parent = comment("c-moment", "moment-1", false);
+        Ref ref = parent.getSpec().getSubjectRef();
+        ref.setGroup("moment.halo.run");
+        ref.setKind("Moment");
+        when(extensionClient.fetch(Comment.class, "c-moment")).thenReturn(Mono.just(parent));
+        StepVerifier.create(commentService.submitReply(sessionToken, "moment-reply-key", null, null,
+                new CommentService.ReplyCommand("c-moment", "访客昵称", "回复", "v1", null)))
+            .expectNextMatches(result -> "published".equals(result.status()))
+            .verifyComplete();
+        assertEquals(1, momentGateway.calls);
+        assertEquals(1, gateway.calls);
+        assertEquals("c-moment", gateway.lastCommentName);
+    }
+
+    @Test
+    void replyToMomentParentIsClosedWhenMomentCommentsAreDisabled() {
+        when(settings.features()).thenReturn(
+            new SettingsService.FeatureConfig(true, false, true));
+        Comment parent = comment("c-moment", "moment-1", false);
+        Ref ref = parent.getSpec().getSubjectRef();
+        ref.setGroup("moment.halo.run");
+        ref.setKind("Moment");
+        when(extensionClient.fetch(Comment.class, "c-moment")).thenReturn(Mono.just(parent));
+        StepVerifier.create(commentService.submitReply(sessionToken, "moment-reply-key", null, null,
+                new CommentService.ReplyCommand("c-moment", "访客昵称", "回复", "v1", null)))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.MOMENT_COMMENT_DISABLED, t))
+            .verify();
+        assertEquals(0, gateway.calls);
+    }
+
+    @Test
     void replyToMissingCommentYieldsCommentNotFound() {
         when(extensionClient.fetch(Comment.class, "c-1")).thenReturn(Mono.empty());
         StepVerifier.create(commentService.submitReply(sessionToken, IDEM_KEY, null, null,
                 new CommentService.ReplyCommand("c-1", "访客昵称", "回复内容", "v1", null)))
             .expectErrorSatisfies(t -> expectError(ErrorCode.COMMENT_NOT_FOUND, t))
+            .verify();
+        assertEquals(0, weChatClient.secCheckCalls);
+        assertEquals(0, gateway.calls);
+    }
+
+    @Test
+    void parentLookupFailureYieldsHaloUnavailableInsteadOfCommentNotFound() {
+        when(extensionClient.fetch(Comment.class, "c-1"))
+            .thenReturn(Mono.error(new IllegalStateException("storage unavailable")));
+        StepVerifier.create(commentService.submitReply(sessionToken, IDEM_KEY, null, null,
+                new CommentService.ReplyCommand("c-1", "访客昵称", "回复内容", "v1", null)))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.HALO_UNAVAILABLE, t))
             .verify();
         assertEquals(0, weChatClient.secCheckCalls);
         assertEquals(0, gateway.calls);
@@ -418,6 +535,22 @@ class CommentServiceTest {
                 new CommentService.ReplyCommand("c-1", "访客昵称", "回复内容", "v1", "r-2")))
             .expectNextCount(1).verifyComplete();
         assertEquals("r-2", gateway.lastQuoteReplyName);
+    }
+
+    @Test
+    void quoteReplyLookupFailureYieldsHaloUnavailableInsteadOfCommentNotFound() {
+        Comment parent = comment("c-1", "post-1", false);
+        when(extensionClient.fetch(Comment.class, "c-1")).thenReturn(Mono.just(parent));
+        givenCommentablePost();
+        when(extensionClient.fetch(Reply.class, "r-1"))
+            .thenReturn(Mono.error(new IllegalStateException("storage unavailable")));
+
+        StepVerifier.create(commentService.submitReply(sessionToken, IDEM_KEY, null, null,
+                new CommentService.ReplyCommand("c-1", "访客昵称", "回复内容", "v1", "r-1")))
+            .expectErrorSatisfies(t -> expectError(ErrorCode.HALO_UNAVAILABLE, t))
+            .verify();
+        assertEquals(0, weChatClient.secCheckCalls);
+        assertEquals(0, gateway.calls);
     }
 
     private static Comment comment(String name, String postName, boolean hidden) {
@@ -490,12 +623,23 @@ class CommentServiceTest {
         String lastDisplayName;
         String lastContent;
         String lastQuoteReplyName;
+        CommentSubject lastSubject;
 
         @Override
         public Mono<GatewayCommentResult> createComment(String postName, String displayName,
                                                         String content) {
             calls++;
             lastPostName = postName;
+            lastDisplayName = displayName;
+            lastContent = content;
+            return Mono.just(new GatewayCommentResult("halo-comment-1", approved));
+        }
+
+        @Override
+        public Mono<GatewayCommentResult> createComment(CommentSubject subject, String displayName,
+                                                         String content) {
+            calls++;
+            lastSubject = subject;
             lastDisplayName = displayName;
             lastContent = content;
             return Mono.just(new GatewayCommentResult("halo-comment-1", approved));
@@ -510,6 +654,17 @@ class CommentServiceTest {
             lastContent = content;
             lastQuoteReplyName = quoteReplyName;
             return Mono.just(new GatewayCommentResult("halo-reply-1", approved));
+        }
+    }
+
+    static final class FakeMomentGateway implements HaloMomentGateway {
+        int calls;
+        ApiException error;
+
+        @Override
+        public Mono<Void> validateCommentable(String momentName) {
+            calls++;
+            return error == null ? Mono.empty() : Mono.error(error);
         }
     }
 }

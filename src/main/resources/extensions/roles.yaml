@@ -39,3 +39,7 @@ rules:
   - apiGroups: ["api.weapp.halo.run"]
     resources: ["comments", "comments/replies"]
     verbs: ["create"]
+  # /moments/{name}/comments is a resource/subresource route under Halo's RequestInfo model.
+  - apiGroups: ["api.weapp.halo.run"]
+    resources: ["moments/comments"]
+    verbs: ["create"]

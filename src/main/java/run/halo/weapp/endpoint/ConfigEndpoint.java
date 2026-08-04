@@ -13,7 +13,7 @@ import run.halo.weapp.config.SettingsService;
 import run.halo.weapp.error.ErrorHandler;
 
 /**
- * GET /config：公开运行时配置。任何内部异常 → 500 同款结构，不泄露细节。
+ * GET /config：公开运行时配置。任何内部异常 → 503/HALO_UNAVAILABLE，不泄露细节。
  */
 @Component
 public class ConfigEndpoint implements CustomEndpoint {

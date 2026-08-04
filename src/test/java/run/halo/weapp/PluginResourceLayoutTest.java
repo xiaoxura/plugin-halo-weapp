@@ -60,6 +60,7 @@ class PluginResourceLayoutTest {
             assertResourceRule(role, "auth", Set.of("account"), Set.of("delete"));
             assertResourceRule(role, "comments", Set.of(), Set.of("create"));
             assertResourceRule(role, "comments/replies", Set.of(), Set.of("create"));
+            assertResourceRule(role, "moments/comments", Set.of(), Set.of("create"));
 
             // Halo treats POST /resource/{name} as a non-resource request, so /auth/login needs an
             // exact nonResourceURL grant. Reply creation is /comments/{name}/replies instead and is

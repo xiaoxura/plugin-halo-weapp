@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -137,6 +138,18 @@ class IdentityKeyServiceTest {
         assertArrayEquals(key, persisted.getData().get(IdentityKeyService.DATA_KEY));
         assertFalse(persisted.toString().contains(Base64.getEncoder().encodeToString(key)),
             "Halo 删除日志会调用 toString，Secret 不得打印 key");
+    }
+
+    @Test
+    void invalidIdentityResourceNameFailsClosedBeforeStorageAccess() {
+        PluginContext pluginContext = mock(PluginContext.class);
+        when(pluginContext.getName()).thenReturn("Plugin With Spaces");
+
+        ApiException error = assertThrows(ApiException.class,
+            () -> new IdentityKeyService(client, pluginContext));
+        assertEquals(ErrorCode.HALO_UNAVAILABLE, error.code());
+        assertThrows(ApiException.class,
+            () -> new IdentityKeyService(client, "bad_name", PLUGIN_NAME, new SecureRandom()));
     }
 
     @Test

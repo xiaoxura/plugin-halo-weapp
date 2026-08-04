@@ -6,6 +6,7 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,8 +25,7 @@ import run.halo.weapp.error.ErrorCode;
  * 匿名游客身份写入，不持有 PAT、不伪造管理员身份。
  *
  * <p>请求体固定构造：{@code {raw, content, allowNotification:false,
- * owner:{displayName}, subjectRef:{group:"content.halo.run",kind:"Post",
- * version:"v1alpha1",name:postName}}}。raw 为服务端 HTML 转义后的纯文本，
+ * owner:{displayName}, subjectRef:{group,kind,version,name}}}。raw 为服务端 HTML 转义后的纯文本，
  * content 为 {@code <p>转义文本</p>}（与 Halo 网站评论结构一致）；
  * 客户端不可指定 group/kind/version/approved/hidden/头像/邮箱/网站。</p>
  */
@@ -36,6 +36,8 @@ public class WebClientHaloCommentGateway implements HaloCommentGateway {
         LoggerFactory.getLogger(WebClientHaloCommentGateway.class);
 
     private static final String COMMENTS_PATH = "apis/api.halo.run/v1alpha1/comments";
+    private static final Pattern RESOURCE_NAME =
+        Pattern.compile("^[A-Za-z0-9][A-Za-z0-9.-]{0,127}$");
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -60,6 +62,19 @@ public class WebClientHaloCommentGateway implements HaloCommentGateway {
     @Override
     public Mono<GatewayCommentResult> createComment(String postName, String displayName,
                                                     String content) {
+        try {
+            return createComment(CommentSubject.post(postName), displayName, content);
+        } catch (IllegalArgumentException e) {
+            return Mono.error(new ApiException(ErrorCode.VALIDATION_ERROR, "文章标识不合法"));
+        }
+    }
+
+    @Override
+    public Mono<GatewayCommentResult> createComment(CommentSubject subject, String displayName,
+                                                    String content) {
+        if (subject == null || (!subject.isPost() && !subject.isMoment())) {
+            return Mono.error(new ApiException(ErrorCode.VALIDATION_ERROR, "评论主体不合法"));
+        }
         Map<String, Object> body = new HashMap<>();
         // raw/content 约定：raw = 转义后纯文本；content = <p>转义文本</p>
         body.put("raw", content);
@@ -67,16 +82,20 @@ public class WebClientHaloCommentGateway implements HaloCommentGateway {
         body.put("allowNotification", false);
         body.put("owner", Map.of("displayName", displayName));
         body.put("subjectRef", Map.of(
-            "group", "content.halo.run",
-            "kind", "Post",
-            "version", "v1alpha1",
-            "name", postName));
-        return post(COMMENTS_PATH, body, true);
+            "group", subject.group(),
+            "kind", subject.kind(),
+            "version", subject.version(),
+            "name", subject.name()));
+        return post(COMMENTS_PATH, body,
+            subject.isPost() ? ErrorCode.POST_NOT_FOUND : ErrorCode.MOMENT_NOT_FOUND);
     }
 
     @Override
     public Mono<GatewayCommentResult> createReply(String commentName, String displayName,
                                                   String content, String quoteReplyName) {
+        if (!isResourceName(commentName)) {
+            return Mono.error(new ApiException(ErrorCode.VALIDATION_ERROR, "评论标识不合法"));
+        }
         Map<String, Object> body = new HashMap<>();
         body.put("raw", content);
         body.put("content", "<p>" + content + "</p>");
@@ -85,11 +104,12 @@ public class WebClientHaloCommentGateway implements HaloCommentGateway {
         if (quoteReplyName != null && !quoteReplyName.isBlank()) {
             body.put("quoteReply", quoteReplyName);
         }
-        return post(COMMENTS_PATH + "/" + commentName + "/reply", body, false);
+        return post(COMMENTS_PATH + "/" + commentName + "/reply", body,
+            ErrorCode.COMMENT_NOT_FOUND);
     }
 
     private Mono<GatewayCommentResult> post(String path, Map<String, Object> body,
-                                            boolean commentTarget) {
+                                            ErrorCode notFoundCode) {
         URI uri = externalUrlSupplier.get().resolve(path);
         return webClient.post()
             .uri(uri)
@@ -98,9 +118,9 @@ public class WebClientHaloCommentGateway implements HaloCommentGateway {
             .exchangeToMono(response -> {
                 int status = response.statusCode().value();
                 if (status == 404) {
-                    return Mono.error(commentTarget
-                        ? new ApiException(ErrorCode.POST_NOT_FOUND, "内容不存在或已删除")
-                        : new ApiException(ErrorCode.COMMENT_NOT_FOUND, "评论不存在或已删除"));
+                    String message = notFoundCode == ErrorCode.COMMENT_NOT_FOUND
+                        ? "评论不存在或已删除" : "内容不存在或已删除";
+                    return Mono.error(new ApiException(notFoundCode, message));
                 }
                 if (status >= 500) {
                     log.warn("[weapp] halo comment write unavailable status={}", status);
@@ -133,6 +153,10 @@ public class WebClientHaloCommentGateway implements HaloCommentGateway {
 
     private static ApiException haloUnavailable() {
         return new ApiException(ErrorCode.HALO_UNAVAILABLE, "服务暂时不可用，请稍后重试");
+    }
+
+    private static boolean isResourceName(String value) {
+        return value != null && RESOURCE_NAME.matcher(value).matches();
     }
 
     /** 解析 Halo 响应 JSON；解析失败按 HALO_UNAVAILABLE 处理（由 onErrorMap 转换）。 */
